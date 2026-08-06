@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include "constants.h"
+#include "tile_mode2.h"
 
 static bool init_graphics(void)
 {
@@ -12,6 +13,8 @@ static bool init_graphics(void)
         return false;
     }
 
+    // Initialize tile mode 2 (8×8 tiles, 8-bit color index)
+    tile_mode2_init();
 
     return true;
 }

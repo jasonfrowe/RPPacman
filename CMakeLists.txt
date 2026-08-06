@@ -16,4 +16,5 @@ rp6502_asset(RPPacMan 0x11000 images/Maze_map.bin)
 rp6502_executable(RPPacMan DATA file RESET file)
 target_sources(RPPacMan PRIVATE
     src/main.c
+    src/tile_mode2.c
 )
