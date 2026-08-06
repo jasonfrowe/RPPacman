@@ -4,6 +4,7 @@
 #include "constants.h"
 #include "tile_mode2.h"
 #include "sprite_mode5.h"
+#include "input.h"
 
 static bool init_graphics(void)
 {
@@ -28,9 +29,8 @@ int main(void)
 {
     puts("Hello from RPPacMan!");
 
-    // Initialize input
-    xreg(0, 0, 0, KEYBOARD_INPUT);
-    xreg(0, 0, 2, GAMEPAD_INPUT);
+    input_actions_t actions;
+    input_init();
 
     // Initialise graphics
     if (!init_graphics()) {
@@ -42,6 +42,8 @@ int main(void)
         // 1. SYNC
         if (RIA.vsync == vsync_last) continue;
         vsync_last = RIA.vsync;
+
+        input_poll(&actions);
 
     }
 

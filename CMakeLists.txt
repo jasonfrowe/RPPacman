@@ -19,4 +19,5 @@ target_sources(RPPacMan PRIVATE
     src/main.c
     src/tile_mode2.c
     src/sprite_mode5.c
+    src/input.c
 )
