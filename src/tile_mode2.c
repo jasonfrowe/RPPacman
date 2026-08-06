@@ -12,7 +12,7 @@ void tile_mode2_init(void) {
 
     xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, x_wrap, true);
     xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, y_wrap, false);
-    xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, x_pos_px,-28); // Center maze horizontally (320px - 47 tiles * 8px) / 2 = 28px
+    xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, x_pos_px,-29); // Center maze horizontally (320px - 47 tiles * 8px) / 2 = 28px
     xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, y_pos_px, 0);
     xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, width_tiles,      MAZE_MAP_WIDTH);
     xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, height_tiles,     MAZE_MAP_HEIGHT);
