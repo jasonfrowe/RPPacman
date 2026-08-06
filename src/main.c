@@ -16,6 +16,7 @@ static bool init_graphics(void)
 
     // Initialize tile mode 2 (8×8 tiles, 8-bit color index)
     tile_mode2_init();
+    init_ghost_data();
     sprite_mode5_init();
 
     return true;
