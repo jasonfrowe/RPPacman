@@ -24,6 +24,26 @@ static const uint16_t maze_palette[16] = {
     0x0020,
 };
 
+static const uint16_t font_palette[16] = {
+    0x0000,
+    0x0A60,
+    0x402D,
+    0x036D,
+    0xF92E,
+    0xFA28,
+    0xFDAC,
+    0x8728,
+    0x21B6,
+    0x06F1,
+    0x743F,
+    0xAD75,
+    0xFCB2,
+    0x9779,
+    0x973C,
+    0xFFFF,
+};
+
 void tile_mode2_init(void);
+void tile_mode2_text_map_init(void);
 
 #endif // TILE_MODE2_H

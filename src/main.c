@@ -5,6 +5,7 @@
 #include "tile_mode2.h"
 #include "sprite_mode5.h"
 #include "input.h"
+#include "player.h"
 
 static bool init_graphics(void)
 {
@@ -19,6 +20,7 @@ static bool init_graphics(void)
     tile_mode2_init();
     init_ghost_data();
     sprite_mode5_init();
+    tile_mode2_text_map_init();
 
     return true;
 }
@@ -43,7 +45,11 @@ int main(void)
         if (RIA.vsync == vsync_last) continue;
         vsync_last = RIA.vsync;
 
+        // 2. INPUT
         input_poll(&actions);
+
+        // 3. Update Player
+        player_update_motion(&actions);
 
     }
 

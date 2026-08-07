@@ -12,6 +12,16 @@ typedef struct {
 
 extern ghost_struct ghosts[NGHOSTS];
 
+typedef struct {
+    int16_t x_pos_px;
+    int16_t y_pos_px;
+    int8_t frame;
+    int8_t lives;
+    int8_t dir; // Direction: 0=left, 1=right, 2=up, 3=down
+} player_struct;
+
+extern player_struct player;
+
 // Palette extracted from Sprites/Player.png
 static const uint16_t player_palette[16] = {
     0x0000,

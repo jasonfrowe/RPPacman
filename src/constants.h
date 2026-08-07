@@ -25,13 +25,23 @@
 #define SPRITE_SIZE_PX          16                  // Size of player sprite in pixels
 #define SPRITE_FRAME_SIZE       0x0080U             // 128 bytes per 16x16 4bpp frame
 
-#define SPRITE_DATA_END        (SPRITE_DATA + SPRITE_DATA_SIZE) // End address of sprite data
+#define FONT_TILES_DATA        (SPRITE_DATA + SPRITE_DATA_SIZE) // Address for font data
+#define FONT_TILES_DATA_SIZE   (0x1B80U)            // Size of font data (6912 bytes)
+
+#define TEXT_MAP_DATA          (FONT_TILES_DATA + FONT_TILES_DATA_SIZE) // Address for text map data
+#define TEXT_MAP_DATA_SIZE     (0x0258U)            // Size of text map data (1200 bytes, 40x15 characters)
+#define TEXT_MAP_WIDTH          40                  // Width of the text map in characters
+#define TEXT_MAP_HEIGHT         15                  // Height of the text map in characters
+
+#define SPRITE_DATA_END        (TEXT_MAP_DATA + TEXT_MAP_DATA_SIZE) // End address of sprite data
 
 // Palette configurations
 #define MAZE_PALETTE_ADDR       0xFC00              // 16-color palette (32 bytes, 0xFC00-0xFC1F)
 #define MAZE_PALETTE_SIZE       0x0020
 #define PLAYER_PALETTE_ADDR     0xFC20              // 16-color palette (32 bytes, 0xFC20-0xFC3F)
 #define PLAYER_PALETTE_SIZE     0x0020
+#define FONT_PALETTE_ADDR       0xFC40              // 16-color palette (32 bytes, 0xFC40-0xFC5F)
+#define FONT_PALETTE_SIZE       0x0020
 
 // OPL2 sound chip configuration
 #define OPL_XRAM_ADDR           0xFE00              // Native RIA OPL2 register page
@@ -45,5 +55,6 @@
 extern unsigned MAZE_CONFIG;                        // Maze configuration
 extern unsigned PLAYER_CONFIG;                      // Player configuration
 extern unsigned GHOST_CONFIG;                       // Ghost configuration
+extern unsigned TEXT_MAP_CONFIG;                    // Text map configuration
 
 #endif // CONSTANTS_H
