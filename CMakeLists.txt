@@ -23,4 +23,5 @@ target_sources(RPPacMan PRIVATE
     src/sprite_mode5.c
     src/input.c
     src/player.c
+    src/ghost.c
 )

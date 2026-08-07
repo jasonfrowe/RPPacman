@@ -19,13 +19,16 @@ const uint8_t last_line_data[TEXT_MAP_WIDTH] = {
     0,0,0,0,0,0,0,0,0,0,0,0,53,46,39,0,0,0,0,0
 };
 
+int16_t maze_dx = -28; // Center maze horizontally (320px - 47 tiles * 8px) / 2 = 28px
+int8_t maze_d1 = 0; // Change in maze_dx for this frame, used to adjust ghost positions
+
 void tile_mode2_init(void) {
 
     MAZE_CONFIG = SPRITE_DATA_END; // After end of Sprite/Tile data.
 
     xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, x_wrap, true);
     xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, y_wrap, false);
-    xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, x_pos_px,-28); // Center maze horizontally (320px - 47 tiles * 8px) / 2 = 28px
+    xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, x_pos_px, maze_dx); // Center maze horizontally (320px - 47 tiles * 8px) / 2 = 28px
     xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, y_pos_px, 0);
     xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, width_tiles,      MAZE_MAP_WIDTH);
     xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, height_tiles,     MAZE_MAP_HEIGHT);

@@ -45,5 +45,7 @@ static const uint16_t font_palette[16] = {
 
 void tile_mode2_init(void);
 void tile_mode2_text_map_init(void);
+extern int16_t maze_dx;
+extern int8_t maze_d1; // Change in maze_dx for this frame, used to adjust ghost positions
 
 #endif // TILE_MODE2_H
