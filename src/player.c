@@ -102,7 +102,42 @@ void player_update_motion(const input_actions_t *actions) {
         }
     }
 
-    // 4. Endless wrap Pac-Man in world space
+    // 4. Pac-Man mouth chomping animation
+    static uint8_t anim_timer = 0;
+    static bool mouth_open = false;
+    static int8_t last_dir = DIR_LEFT;
+
+    if (player.dir != DIR_NONE) {
+        last_dir = player.dir; // Track facing direction while moving
+
+        anim_timer++;
+        if (anim_timer >= 6) { // Toggle frame every 6 ticks (~10Hz animation)
+            anim_timer = 0;
+            mouth_open = !mouth_open;
+        }
+
+        uint8_t base_frame = 4;
+        switch (player.dir) {
+            case DIR_UP:    base_frame = 0; break;
+            case DIR_DOWN:  base_frame = 2; break;
+            case DIR_LEFT:  base_frame = 4; break;
+            case DIR_RIGHT: base_frame = 6; break;
+        }
+
+        player.frame = base_frame + (mouth_open ? 0 : 1);
+    } else {
+        // When stationary/idle, show open mouth frame for last facing direction
+        uint8_t open_frame = 4;
+        switch (last_dir) {
+            case DIR_UP:    open_frame = 0; break;
+            case DIR_DOWN:  open_frame = 2; break;
+            case DIR_LEFT:  open_frame = 4; break;
+            case DIR_RIGHT: open_frame = 6; break;
+        }
+        player.frame = open_frame;
+    }
+
+    // 5. Endless wrap Pac-Man in world space
     if (player.world_px < 0) {
         player.world_px += WORLD_WIDTH;
     } else if (player.world_px >= WORLD_WIDTH) {
@@ -130,6 +165,7 @@ void player_update_motion(const input_actions_t *actions) {
     xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, x_pos_px, maze_dx);
     xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, x_pos_px, visual_x);
     xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, y_pos_px, player.y_pos_px);
+    xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (player.frame * SPRITE_FRAME_SIZE)));
 
     // Update Ghost screen positions relative to endless maze scroll
     for (int i = 0; i < NGHOSTS; i++) {
