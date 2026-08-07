@@ -38,7 +38,10 @@
 #define TEXT_MAP_WIDTH          40                  // Width of the text map in characters
 #define TEXT_MAP_HEIGHT         15                  // Height of the text map in characters
 
-#define SPRITE_DATA_END        (TEXT_MAP_DATA + TEXT_MAP_DATA_SIZE) // End address of sprite data
+#define ALL_MAZE_MAPS_DATA     (TEXT_MAP_DATA + TEXT_MAP_DATA_SIZE) // Address for all maze maps data
+#define ALL_MAZE_MAPS_DATA_SIZE  (0x3C96U)          // Size of all maze maps data (15510 bytes, 47x30 tiles * 11 maps)
+
+#define SPRITE_DATA_END        (ALL_MAZE_MAPS_DATA + ALL_MAZE_MAPS_DATA_SIZE) // End address of sprite data
 
 // Palette configurations
 #define MAZE_PALETTE_ADDR       0xFC00              // 16-color palette (32 bytes, 0xFC00-0xFC1F)
