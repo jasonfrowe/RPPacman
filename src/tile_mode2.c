@@ -115,6 +115,35 @@ void tile_mode2_palette_update(uint8_t frame){
     // Write the chosen color
     RIA.rw0 = maze_palette[color_index] & 0xFF; // Low byte of the color
     RIA.rw0 = maze_palette[color_index] >> 8;   // High byte of the color
+}
 
+void update_player_score_display(uint32_t score) {
+    // 7-digit score at indices 9 through 15 on row 0 of TEXT_MAP_DATA
+    // Digit to tile index mapping: 0 -> 46, 1 -> 37, 2 -> 38, ..., 9 -> 45
+    static const uint8_t digit_tile_map[10] = {
+        46, // '0'
+        37, // '1'
+        38, // '2'
+        39, // '3'
+        40, // '4'
+        41, // '5'
+        42, // '6'
+        43, // '7'
+        44, // '8'
+        45  // '9'
+    };
 
+    uint8_t digits[7];
+    uint32_t temp = score;
+
+    for (int8_t i = 6; i >= 0; i--) {
+        digits[i] = digit_tile_map[temp % 10];
+        temp /= 10;
+    }
+
+    RIA.addr0 = TEXT_MAP_DATA + 9;
+    RIA.step0 = 1;
+    for (uint8_t i = 0; i < 7; i++) {
+        RIA.rw0 = digits[i];
+    }
 }

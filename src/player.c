@@ -155,6 +155,8 @@ static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
         player.score += dot_pts;
         player.pellets_eaten++;
 
+        update_player_score_display(player.score);
+
         uint8_t score_tile = get_score_tile_index(dot_pts);
         push_score_popup(tile_x, tile_y, score_tile);
     }
