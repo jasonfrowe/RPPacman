@@ -72,7 +72,7 @@ void init_tilemap_edges(void) {
 
 void tile_mode2_text_map_init(void) {
 
-    TEXT_MAP_CONFIG = GHOST_CONFIG + NGHOSTS * sizeof(vga_mode5_sprite_t); // After ghost config
+    TEXT_MAP_CONFIG = PLAYER_CONFIG + sizeof(vga_mode5_sprite_t); // After prize config
 
     xram0_struct_set(TEXT_MAP_CONFIG, vga_mode2_config_t, x_wrap, false);
     xram0_struct_set(TEXT_MAP_CONFIG, vga_mode2_config_t, y_wrap, false);

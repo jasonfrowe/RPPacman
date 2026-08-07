@@ -13,9 +13,9 @@ rp6502_asset(RPPacMan help src/help.txt)
 rp6502_asset(RPPacMan 0x10000 images/Maze_tiles_4bpp.bin)
 rp6502_asset(RPPacMan 0x11000 images/Maze_map.bin)
 rp6502_asset(RPPacMan 0x11582 images/Sprites_RP6502_4bpp.bin)
-rp6502_asset(RPPacMan 0x14682 images/Fonts_RP6502_4bpp.bin)
-rp6502_asset(RPPacMan 0x16202 images/Text_map.bin)
-rp6502_asset(RPPacMan 0x1645A images/R_Mazes.bin)
+rp6502_asset(RPPacMan 0x14702 images/Fonts_RP6502_4bpp.bin)
+rp6502_asset(RPPacMan 0x16282 images/Text_map.bin)
+rp6502_asset(RPPacMan 0x164DA images/R_Mazes.bin)
 
 rp6502_executable(RPPacMan DATA file RESET file)
 target_sources(RPPacMan PRIVATE
@@ -25,4 +25,5 @@ target_sources(RPPacMan PRIVATE
     src/input.c
     src/player.c
     src/ghost.c
+    src/prizes.c
 )

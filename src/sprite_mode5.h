@@ -35,6 +35,16 @@ typedef struct {
 
 extern player_struct player;
 
+typedef struct {
+    int16_t x_pos_px;
+    int16_t y_pos_px;
+    int16_t world_px;
+    int16_t world_py;
+    int8_t frame;
+} prize_struct;
+
+extern prize_struct prizes[NPRIZES];
+
 // Palette extracted from Sprites/Player.png
 static const uint16_t player_palette[16] = {
     0x0000,

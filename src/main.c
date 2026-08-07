@@ -7,6 +7,7 @@
 #include "input.h"
 #include "player.h"
 #include "ghost.h"
+#include "prizes.h"
 
 static bool init_graphics(void)
 {
@@ -55,6 +56,7 @@ int main(void)
         // 3. Update Player
         player_update_motion(&actions);
         ghost_update_motion();
+        prize_update_motion();
 
         // 4. Update animation palettes
         tile_mode2_palette_update(frame);
