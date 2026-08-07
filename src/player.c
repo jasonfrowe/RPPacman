@@ -5,6 +5,7 @@
 #include "player.h"
 #include "sprite_mode5.h"
 #include "tile_mode2.h"
+#include "prizes.h"
 
 static int8_t queued_dir = DIR_NONE;
 
@@ -159,7 +160,13 @@ static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
 
         uint8_t score_tile = get_score_tile_index(dot_pts);
         push_score_popup(tile_x, tile_y, score_tile);
+
+        // Check if clearing this pellet triggered side prize spawning
+        update_side_pellets_status();
     }
+
+    // Check if Pacman is consuming an active prize
+    check_and_eat_prize(tile_x, tile_y);
 }
 
 void player_update_motion(const input_actions_t *actions) {
