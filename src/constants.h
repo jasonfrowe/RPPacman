@@ -5,6 +5,11 @@
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 240
 
+#define WORLD_WIDTH 376
+#define WORLD_WIDTH_D2 (WORLD_WIDTH / 2)
+#define WORLD_HEIGHT 240
+#define WORLD_HEIGHT_D2 (WORLD_HEIGHT / 2)
+
 // GHOST parameters
 #define NGHOSTS 4                                   // Number of ghosts in the game
 
