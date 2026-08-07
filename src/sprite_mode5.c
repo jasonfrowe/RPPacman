@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include "constants.h"
 #include "sprite_mode5.h"
+#include "tile_mode2.h"
 
 // Store the player config address for updates
 unsigned PLAYER_CONFIG;
@@ -16,6 +17,8 @@ void sprite_mode5_init(void) {
 
     player.x_pos_px = (int16_t)((SCREEN_WIDTH - SPRITE_SIZE_PX) / 2);
     player.y_pos_px = (int16_t)((SCREEN_HEIGHT - SPRITE_SIZE_PX) * 2 / 3 + 16); // Start slightly lower than center for better composition
+    player.world_px = player.x_pos_px - maze_dx;
+    player.world_py = player.y_pos_px;
 
     player_frame = 5; // Start with the "facing left / closed" frame for the player sprite
 
@@ -58,22 +61,30 @@ void sprite_mode5_init(void) {
 // Call this before calling sprite_mode5_init_ghosts()
 void init_ghost_data(void) {
     // Ghost 0 (Blinky / Red) -Inside top
-    ghosts[0].x_pos_px = (int16_t)((SCREEN_WIDTH - SPRITE_SIZE_PX) / 2);;
+    ghosts[0].x_pos_px = (int16_t)((SCREEN_WIDTH - SPRITE_SIZE_PX) / 2);
     ghosts[0].y_pos_px = (int16_t)((SCREEN_HEIGHT - SPRITE_SIZE_PX) * 2 / 3 - 40); // Start slightly above center for better composition
+    ghosts[0].world_px = ghosts[0].x_pos_px - maze_dx;
+    ghosts[0].world_py = ghosts[0].y_pos_px;
     ghosts[0].frame = 10;
 
     // Ghost 1 (Pinky / Pink) - Inside, bottom
-    ghosts[1].x_pos_px = (int16_t)((SCREEN_WIDTH - SPRITE_SIZE_PX) / 2);;
+    ghosts[1].x_pos_px = (int16_t)((SCREEN_WIDTH - SPRITE_SIZE_PX) / 2);
     ghosts[1].y_pos_px = (int16_t)((SCREEN_HEIGHT - SPRITE_SIZE_PX) * 2 / 3 - 24);
+    ghosts[1].world_px = ghosts[1].x_pos_px - maze_dx;
+    ghosts[1].world_py = ghosts[1].y_pos_px;
     ghosts[1].frame = 16;
 
     // Ghost 2 (Inky / Cyan) - Inside, left
-    ghosts[2].x_pos_px = (int16_t)((SCREEN_WIDTH - SPRITE_SIZE_PX) / 2 - 16);;
+    ghosts[2].x_pos_px = (int16_t)((SCREEN_WIDTH - SPRITE_SIZE_PX) / 2 - 16);
     ghosts[2].y_pos_px = (int16_t)((SCREEN_HEIGHT - SPRITE_SIZE_PX) * 2 / 3 - 32);
+    ghosts[2].world_px = ghosts[2].x_pos_px - maze_dx;
+    ghosts[2].world_py = ghosts[2].y_pos_px;
     ghosts[2].frame = 26;
 
     // Ghost 3 (Clyde / Orange) - Inside, right
-    ghosts[3].x_pos_px = (int16_t)((SCREEN_WIDTH - SPRITE_SIZE_PX) / 2 + 16);;
+    ghosts[3].x_pos_px = (int16_t)((SCREEN_WIDTH - SPRITE_SIZE_PX) / 2 + 16);
     ghosts[3].y_pos_px = (int16_t)((SCREEN_HEIGHT - SPRITE_SIZE_PX) * 2 / 3 - 32);
+    ghosts[3].world_px = ghosts[3].x_pos_px - maze_dx;
+    ghosts[3].world_py = ghosts[3].y_pos_px;
     ghosts[3].frame = 34;
 }
