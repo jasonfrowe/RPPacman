@@ -102,3 +102,19 @@ void tile_mode2_text_map_init(void) {
     }
 
 }
+
+void tile_mode2_palette_update(uint8_t frame){
+
+    // 2 Hz cadence at 60 FPS: toggle every 15 frames (30 frames for a full cycle)
+    int color_index = ((frame % 30) < 15) ? 5 : 1;
+
+    // Address of the pellet color in the maze palette (2 bytes per colour, so +2 is the second color)
+    RIA.addr0 = MAZE_PALETTE_ADDR + 2; 
+    RIA.step0 = 1;
+
+    // Write the chosen color
+    RIA.rw0 = maze_palette[color_index] & 0xFF; // Low byte of the color
+    RIA.rw0 = maze_palette[color_index] >> 8;   // High byte of the color
+
+
+}

@@ -27,6 +27,7 @@ static bool init_graphics(void)
 }
 
 uint8_t vsync_last = 0;
+uint8_t frame = 0;
 
 int main(void)
 {
@@ -45,6 +46,8 @@ int main(void)
         // 1. SYNC
         if (RIA.vsync == vsync_last) continue;
         vsync_last = RIA.vsync;
+        frame++;
+        if (frame >= 60) frame = 0;
 
         // 2. INPUT
         input_poll(&actions);
@@ -52,6 +55,9 @@ int main(void)
         // 3. Update Player
         player_update_motion(&actions);
         ghost_update_motion();
+
+        // 4. Update animation palettes
+        tile_mode2_palette_update(frame);
 
     }
 
