@@ -14,8 +14,8 @@ ghost_struct ghosts[NGHOSTS];
 player_struct player;
 
 prize_struct prizes[NPRIZES] = {
-    {0, 0, 144 - 5, 120 - 3, 49},
-    {0, 0, 224 - 5, 120 - 3, 50}
+    {0, 0, 144 - 5, 120 - 3, 48},
+    {0, 0, 224 - 5, 120 - 3, 48}
 };
 
 void sprite_mode5_init(void) {
