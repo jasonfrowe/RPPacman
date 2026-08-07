@@ -19,6 +19,8 @@ void sprite_mode5_init(void) {
     player.world_py = 21 * MAZE_TILES_SIZE_PX; // 168
     player.x_pos_px = (int16_t)((SCREEN_WIDTH - SPRITE_SIZE_PX) / 2);
     player.y_pos_px = player.world_py - 3; // Visual offset to restore 165px plotted position
+    player.score = 0;
+    player.pellets_eaten = 0;
 
     player.frame = 5; // Start with the "facing left / closed" frame for the player sprite
 

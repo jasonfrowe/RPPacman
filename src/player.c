@@ -47,6 +47,119 @@ static bool can_step_dir(int16_t world_x, int16_t world_y, int8_t dir) {
     return !is_wall_tile(world_x + dx * 8, world_y + dy * 8);
 }
 
+#define MAX_SCORE_POPUPS 10
+static eaten_tile_popup_t s_score_popups[MAX_SCORE_POPUPS];
+static uint8_t s_popup_count = 0;
+
+static uint8_t get_score_tile_index(uint32_t pts) {
+    switch (pts) {
+        case 10: return 120;
+        case 20: return 121;
+        case 30: return 122;
+        case 40: return 123;
+        case 50: return 124;
+        default: return 120;
+    }
+}
+
+static uint32_t get_current_dot_value(uint16_t dots_eaten) {
+    if (dots_eaten < 60)   return 10;
+    if (dots_eaten < 120)  return 20;
+    if (dots_eaten < 180)  return 30;
+    if (dots_eaten < 240)  return 40;
+    return 50;
+}
+
+static void push_score_popup(uint16_t tile_x, uint16_t tile_y, uint8_t score_tile) {
+    // If popups queue is full (10 items), expire the oldest entry immediately to blank (tile 0)
+    if (s_popup_count >= MAX_SCORE_POPUPS) {
+        uint16_t old_offset = s_score_popups[0].tile_y * MAZE_MAP_WIDTH + s_score_popups[0].tile_x;
+        RIA.addr0 = MAZE_MAP_DATA + old_offset;
+        RIA.step0 = 1;
+        RIA.rw0 = 0;
+
+        for (uint8_t i = 0; i < MAX_SCORE_POPUPS - 1; i++) {
+            s_score_popups[i] = s_score_popups[i + 1];
+        }
+        s_popup_count--;
+    }
+
+    // Add new popup to array
+    s_score_popups[s_popup_count].tile_x = tile_x;
+    s_score_popups[s_popup_count].tile_y = tile_y;
+    s_score_popups[s_popup_count].timer = 30; // 30 frames countdown
+    s_score_popups[s_popup_count].active = true;
+    s_popup_count++;
+
+    // Write score tile index (120..124) into XRAM tile map
+    uint16_t offset = tile_y * MAZE_MAP_WIDTH + tile_x;
+    RIA.addr0 = MAZE_MAP_DATA + offset;
+    RIA.step0 = 1;
+    RIA.rw0 = score_tile;
+}
+
+static void update_score_popups(void) {
+    for (int8_t i = 0; i < (int8_t)s_popup_count; i++) {
+        if (!s_score_popups[i].active) continue;
+
+        if (s_score_popups[i].timer > 0) {
+            s_score_popups[i].timer--;
+        }
+
+        if (s_score_popups[i].timer == 0) {
+            // Revert tile back to 0 (blank)
+            uint16_t offset = s_score_popups[i].tile_y * MAZE_MAP_WIDTH + s_score_popups[i].tile_x;
+            RIA.addr0 = MAZE_MAP_DATA + offset;
+            RIA.step0 = 1;
+            RIA.rw0 = 0;
+
+            // Remove item from popup list
+            for (uint8_t j = (uint8_t)i; j < s_popup_count - 1; j++) {
+                s_score_popups[j] = s_score_popups[j + 1];
+            }
+            s_popup_count--;
+            i--; // Adjust loop index after shift
+        }
+    }
+}
+
+static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
+    // Only check when Pacman is aligned on 8px tile grid boundary
+    if (world_x % MAZE_TILES_SIZE_PX != 0 || world_y % MAZE_TILES_SIZE_PX != 0) {
+        return;
+    }
+
+    int16_t check_x = world_x;
+    int16_t check_y = world_y;
+
+    while (check_x < 0) check_x += WORLD_WIDTH;
+    while (check_x >= WORLD_WIDTH) check_x -= WORLD_WIDTH;
+    while (check_y < 0) check_y += WORLD_HEIGHT;
+    while (check_y >= WORLD_HEIGHT) check_y -= WORLD_HEIGHT;
+
+    uint16_t tile_x = (uint16_t)(check_x / MAZE_TILES_SIZE_PX);
+    uint16_t tile_y = (uint16_t)(check_y / MAZE_TILES_SIZE_PX);
+
+    if (tile_x >= MAZE_MAP_WIDTH) tile_x %= MAZE_MAP_WIDTH;
+    if (tile_y >= MAZE_MAP_HEIGHT) tile_y %= MAZE_MAP_HEIGHT;
+
+    uint16_t offset = tile_y * MAZE_MAP_WIDTH + tile_x;
+
+    RIA.addr0 = MAZE_MAP_DATA + offset;
+    RIA.step0 = 1;
+    uint8_t tile_index = RIA.rw0;
+
+    // Check if tile is a dot (116) or power pellet (117)
+    if (tile_index == 116 || tile_index == 117) {
+        uint32_t dot_pts = get_current_dot_value(player.pellets_eaten);
+        player.score += dot_pts;
+        player.pellets_eaten++;
+
+        uint8_t score_tile = get_score_tile_index(dot_pts);
+        push_score_popup(tile_x, tile_y, score_tile);
+    }
+}
+
 void player_update_motion(const input_actions_t *actions) {
 
     // 1. Buffer user direction input
@@ -101,6 +214,12 @@ void player_update_motion(const input_actions_t *actions) {
             player.dir = DIR_NONE; // Stop at wall intersection
         }
     }
+
+    // Check if Pacman ate a pellet on current tile
+    check_and_eat_pellet(player.world_px, player.world_py);
+
+    // Update active score popups (30 frame timer & queue decay)
+    update_score_popups();
 
     // 4. Pac-Man mouth chomping animation
     static uint8_t anim_timer = 0;
