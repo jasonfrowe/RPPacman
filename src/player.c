@@ -180,30 +180,40 @@ static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
     }
 }
 
-// 8.8 Fixed-Point Speed Lookup Table (High Byte = Pixels, Low Byte = Sub-pixel fraction)
-const uint16_t SPEED_TABLE[13] = {
-    0x0100, // Level 0: 1.00 px/frame
-    0x0120, // Level 1: 1.12 px/frame
-    0x0140, // Level 2: 1.25 px/frame
-    0x0160, // Level 3: 1.37 px/frame
-    0x0180, // Level 4: 1.50 px/frame
-    0x01A0, // Level 5: 1.62 px/frame
-    0x01C0, // Level 6: 1.75 px/frame
-    0x01E0, // Level 7: 1.87 px/frame
-    0x0200, // Level 8: 2.00 px/frame
-    0x0220, // Level 9: 2.12 px/frame
-    0x0240, // Level 10: 2.25 px/frame
-    0x0260, // Level 11: 2.37 px/frame
-    0x0280, // Level 12: 2.50 px/frame (Max Cap)
+// 8.8 Fixed-Point Speed Lookup Table across 22 Prize Levels (Cherry to Crown)
+// 0x0100 = 1.00 px/frame (Cherry) -> 0x0280 = 2.50 px/frame (Crown)
+const uint16_t SPEED_TABLE[22] = {
+    0x0100, // Level 0  (Cherry):            1.000 px/frame
+    0x0112, // Level 1  (Strawberry):        1.071 px/frame
+    0x0124, // Level 2  (Orange):            1.142 px/frame
+    0x0136, // Level 3  (Apple):             1.214 px/frame
+    0x0149, // Level 4  (Melon):             1.285 px/frame
+    0x015B, // Level 5  (Banana):            1.357 px/frame
+    0x016D, // Level 6  (Peach):             1.428 px/frame
+    0x0180, // Level 7  (Galaxian Boss):     1.500 px/frame
+    0x0192, // Level 8  (Bell):              1.571 px/frame
+    0x01A4, // Level 9  (Key):               1.642 px/frame
+    0x01B6, // Level 10 (Coffee):            1.714 px/frame
+    0x01C9, // Level 11 (Cake):              1.785 px/frame
+    0x01DB, // Level 12 (Galaga):            1.857 px/frame
+    0x01ED, // Level 13 (Gaplus Drone):      1.928 px/frame
+    0x0200, // Level 14 (Hamburger):         2.000 px/frame
+    0x0212, // Level 15 (Fried Egg):         2.071 px/frame
+    0x0224, // Level 16 (Candy):             2.142 px/frame
+    0x0236, // Level 17 (Four-Leaf Clover):  2.214 px/frame
+    0x0249, // Level 18 (Diamond):           2.285 px/frame
+    0x025B, // Level 19 (Heart):             2.357 px/frame
+    0x026D, // Level 20 (Samurai Helmet):    2.428 px/frame
+    0x0280, // Level 21 (Crown):             2.500 px/frame (Max Cap)
 };
 
 static uint16_t s_speed_subpixel_x = 0;
 static uint16_t s_speed_subpixel_y = 0;
 
-static uint8_t get_speed_level_index(uint32_t score) {
-    uint32_t lvl = score / 20000;
-    if (lvl > 12) lvl = 12;
-    return (uint8_t)lvl;
+static uint8_t get_speed_level_index(void) {
+    uint8_t max_count = (left_prize_count > right_prize_count) ? left_prize_count : right_prize_count;
+    if (max_count > 21) max_count = 21;
+    return max_count;
 }
 
 void player_update_motion(const input_actions_t *actions) {
@@ -243,7 +253,7 @@ void player_update_motion(const input_actions_t *actions) {
         int8_t dx, dy;
         get_dir_offset(player.dir, &dx, &dy);
 
-        uint8_t speed_lvl = get_speed_level_index(player.score);
+        uint8_t speed_lvl = get_speed_level_index();
         uint16_t speed_fp = SPEED_TABLE[speed_lvl];
 
         int16_t move_pixels = 0;
