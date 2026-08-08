@@ -407,7 +407,16 @@ void player_update_motion(const input_actions_t *actions) {
             ghosts[i].world_px -= WORLD_WIDTH;
         }
 
-        ghosts[i].x_pos_px = ghosts[i].world_px + maze_dx + VISUAL_X_OFFSET;
+        int16_t ghost_screen_x = ghosts[i].world_px + maze_dx;
+        
+        // Endless horizontal scrolling wrapping for ghost screen coordinates
+        if (ghost_screen_x < -16) {
+            ghost_screen_x += WORLD_WIDTH;
+        } else if (ghost_screen_x >= (WORLD_WIDTH - 16)) {
+            ghost_screen_x -= WORLD_WIDTH;
+        }
+
+        ghosts[i].x_pos_px = ghost_screen_x + VISUAL_X_OFFSET;
         ghosts[i].y_pos_px = ghosts[i].world_py + VISUAL_Y_OFFSET;
 
         uint16_t current_ghost_config = GHOST_CONFIG + (i * sizeof(vga_mode5_sprite_t));
