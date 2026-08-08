@@ -219,45 +219,113 @@ void update_side_pellets_status(void) {
     }
 }
 
-void check_and_eat_prize(uint16_t tile_x, uint16_t tile_y) {
-    // Prize 0 (spawned when left side is cleared) is centered at tile (28, 15)
-    if (left_prize_active && (tile_x == 28 || tile_x == 29) && (tile_y == 15 || tile_y == 16)) {
-        left_prize_active = false;
-        prizes[0].frame = 48; // Blank sprite
-        prizes[0].sparkle_frame = 48;
+static const uint16_t PRIZE_POINTS_TABLE[22] = {
+    1000, // Index 49: Cherry
+    1200, // Index 50: Strawberry
+    1400, // Index 51: Orange
+    1600, // Index 52: Apple
+    1800, // Index 53: Melon
+    2000, // Index 54: Banana
+    2200, // Index 55: Peach
+    2400, // Index 56: Galaxian Boss
+    2600, // Index 57: Bell
+    4000, // Index 58: Key
+    4200, // Index 59: Coffee
+    4400, // Index 60: Cake
+    4600, // Index 61: Galaga
+    4800, // Index 62: Gaplus Drone
+    5000, // Index 63: Hamburger
+    5200, // Index 64: Fried Egg
+    5400, // Index 65: Candy
+    5600, // Index 66: Four-Leaf Clover
+    5800, // Index 67: Diamond
+    6000, // Index 68: Heart
+    6200, // Index 69: Samurai Helmet
+    7650, // Index 70: Crown
+};
 
-        unsigned prize_config0 = PRIZE_CONFIG + (0 * sizeof(vga_mode5_sprite_t));
-        xram0_struct_set(prize_config0, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (prizes[0].frame * SPRITE_FRAME_SIZE)));
+static uint16_t get_prize_points(uint8_t sprite_frame) {
+    if (sprite_frame < 49 || sprite_frame > 70) return 0;
+    return PRIZE_POINTS_TABLE[sprite_frame - 49];
+}
 
-        unsigned prize_sparkle_config0 = PRIZE_SPARKLE_CONFIG + (0 * sizeof(vga_mode5_sprite_t));
-        xram0_struct_set(prize_sparkle_config0, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+void check_and_eat_prize(int16_t drawn_world_x, int16_t drawn_world_y) {
+    // Wrap Pac-Man drawn world coordinates
+    int16_t pm_x = drawn_world_x;
+    int16_t pm_y = drawn_world_y;
+    while (pm_x < 0) pm_x += WORLD_WIDTH;
+    while (pm_x >= WORLD_WIDTH) pm_x -= WORLD_WIDTH;
+    while (pm_y < 0) pm_y += WORLD_HEIGHT;
+    while (pm_y >= WORLD_HEIGHT) pm_y -= WORLD_HEIGHT;
 
-        // Advance left level: 0..10, then loop back to 1
-        left_side_level++;
-        if (left_side_level > 10) left_side_level = 1;
+    // Pac-Man 16x16 sprite visual center point
+    int16_t pm_center_x = pm_x + 8;
+    int16_t pm_center_y = pm_y + 8;
 
-        // Trigger column-by-column animated maze munchers transition
-        trigger_maze_transition(left_side_level, false);
+    // Prize 0 (Left side clear bonus item)
+    if (left_prize_active) {
+        int16_t pr_x = prizes[0].world_px;
+        int16_t pr_y = prizes[0].world_py;
+        // 16x16 prize sprite bounding box check: center point falls within prize bounds
+        if (pm_center_x >= (pr_x + 2) && pm_center_x <= (pr_x + 14) &&
+            pm_center_y >= (pr_y + 2) && pm_center_y <= (pr_y + 14)) {
+
+            left_prize_active = false;
+
+            // Award points for capturing left bonus item
+            uint16_t pts = get_prize_points(left_prize_sprite);
+            player.score += pts;
+            update_player_score_display(player.score);
+
+            prizes[0].frame = 48; // Blank sprite
+            prizes[0].sparkle_frame = 48;
+
+            unsigned prize_config0 = PRIZE_CONFIG + (0 * sizeof(vga_mode5_sprite_t));
+            xram0_struct_set(prize_config0, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (prizes[0].frame * SPRITE_FRAME_SIZE)));
+
+            unsigned prize_sparkle_config0 = PRIZE_SPARKLE_CONFIG + (0 * sizeof(vga_mode5_sprite_t));
+            xram0_struct_set(prize_sparkle_config0, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+
+            // Advance left level: 0..10, then loop back to 1
+            left_side_level++;
+            if (left_side_level > 10) left_side_level = 1;
+
+            // Trigger column-by-column animated maze munchers transition
+            trigger_maze_transition(left_side_level, false);
+        }
     }
 
-    // Prize 1 (spawned when right side is cleared) is centered at tile (18, 15)
-    if (right_prize_active && (tile_x == 17 || tile_x == 18) && (tile_y == 15 || tile_y == 16)) {
-        right_prize_active = false;
-        prizes[1].frame = 48; // Blank sprite
-        prizes[1].sparkle_frame = 48;
+    // Prize 1 (Right side clear bonus item)
+    if (right_prize_active) {
+        int16_t pr_x = prizes[1].world_px;
+        int16_t pr_y = prizes[1].world_py;
+        // 16x16 prize sprite bounding box check: center point falls within prize bounds
+        if (pm_center_x >= (pr_x + 2) && pm_center_x <= (pr_x + 14) &&
+            pm_center_y >= (pr_y + 2) && pm_center_y <= (pr_y + 14)) {
 
-        unsigned prize_config1 = PRIZE_CONFIG + (1 * sizeof(vga_mode5_sprite_t));
-        xram0_struct_set(prize_config1, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (prizes[1].frame * SPRITE_FRAME_SIZE)));
+            right_prize_active = false;
 
-        unsigned prize_sparkle_config1 = PRIZE_SPARKLE_CONFIG + (1 * sizeof(vga_mode5_sprite_t));
-        xram0_struct_set(prize_sparkle_config1, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+            // Award points for capturing right bonus item
+            uint16_t pts = get_prize_points(right_prize_sprite);
+            player.score += pts;
+            update_player_score_display(player.score);
 
-        // Advance right level: 0..10, then loop back to 1
-        right_side_level++;
-        if (right_side_level > 10) right_side_level = 1;
+            prizes[1].frame = 48; // Blank sprite
+            prizes[1].sparkle_frame = 48;
 
-        // Trigger column-by-column animated maze munchers transition
-        trigger_maze_transition(right_side_level, true);
+            unsigned prize_config1 = PRIZE_CONFIG + (1 * sizeof(vga_mode5_sprite_t));
+            xram0_struct_set(prize_config1, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (prizes[1].frame * SPRITE_FRAME_SIZE)));
+
+            unsigned prize_sparkle_config1 = PRIZE_SPARKLE_CONFIG + (1 * sizeof(vga_mode5_sprite_t));
+            xram0_struct_set(prize_sparkle_config1, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+
+            // Advance right level: 0..10, then loop back to 1
+            right_side_level++;
+            if (right_side_level > 10) right_side_level = 1;
+
+            // Trigger column-by-column animated maze munchers transition
+            trigger_maze_transition(right_side_level, true);
+        }
     }
 }
 

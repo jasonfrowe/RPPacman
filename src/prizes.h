@@ -10,7 +10,7 @@ extern uint8_t left_prize_count;
 extern uint8_t right_prize_count;
 
 extern void prize_update_motion(void);
-extern void check_and_eat_prize(uint16_t tile_x, uint16_t tile_y);
+extern void check_and_eat_prize(int16_t drawn_world_x, int16_t drawn_world_y);
 extern void update_side_pellets_status(void);
 extern void update_maze_munchers_animation(void);
 

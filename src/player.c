@@ -7,6 +7,9 @@
 #include "tile_mode2.h"
 #include "prizes.h"
 
+#define VISUAL_X_OFFSET (-3) // Visual horizontal draw offset (-3px)
+#define VISUAL_Y_OFFSET (-3) // Visual vertical draw offset (-3px)
+
 static int8_t queued_dir = DIR_NONE;
 
 static bool is_wall_tile(int16_t world_x, int16_t world_y) {
@@ -88,7 +91,7 @@ static void push_score_popup(uint16_t tile_x, uint16_t tile_y, uint8_t score_til
     // Add new popup to array
     s_score_popups[s_popup_count].tile_x = tile_x;
     s_score_popups[s_popup_count].tile_y = tile_y;
-    s_score_popups[s_popup_count].timer = 30; // 30 frames countdown
+    s_score_popups[s_popup_count].timer = 40; // 40 frames countdown
     s_score_popups[s_popup_count].active = true;
     s_popup_count++;
 
@@ -125,48 +128,82 @@ static void update_score_popups(void) {
 }
 
 static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
-    // Only check when Pacman is aligned on 8px tile grid boundary
-    if (world_x % MAZE_TILES_SIZE_PX != 0 || world_y % MAZE_TILES_SIZE_PX != 0) {
-        return;
+    // Pickup bounding box aligned with Pac-Man's visual drawn position:
+    // Drawn top-left = (world_x + VISUAL_X_OFFSET, world_y + VISUAL_Y_OFFSET)
+    // 16x16 sprite visual center = (+7px .. +8px)
+    int16_t drawn_x = world_x + VISUAL_X_OFFSET;
+    int16_t drawn_y = world_y + VISUAL_Y_OFFSET;
+
+    int16_t check_points_x[2] = { drawn_x + 7, drawn_x + 8 };
+    int16_t check_points_y[2] = { drawn_y + 7, drawn_y + 8 };
+
+    for (uint8_t ix = 0; ix < 2; ix++) {
+        for (uint8_t iy = 0; iy < 2; iy++) {
+            int16_t check_x = check_points_x[ix];
+            int16_t check_y = check_points_y[iy];
+
+            while (check_x < 0) check_x += WORLD_WIDTH;
+            while (check_x >= WORLD_WIDTH) check_x -= WORLD_WIDTH;
+            while (check_y < 0) check_y += WORLD_HEIGHT;
+            while (check_y >= WORLD_HEIGHT) check_y -= WORLD_HEIGHT;
+
+            uint16_t tile_x = (uint16_t)(check_x / MAZE_TILES_SIZE_PX);
+            uint16_t tile_y = (uint16_t)(check_y / MAZE_TILES_SIZE_PX);
+
+            if (tile_x >= MAZE_MAP_WIDTH) tile_x %= MAZE_MAP_WIDTH;
+            if (tile_y >= MAZE_MAP_HEIGHT) tile_y %= MAZE_MAP_HEIGHT;
+
+            uint16_t offset = tile_y * MAZE_MAP_WIDTH + tile_x;
+
+            RIA.addr0 = MAZE_MAP_DATA + offset;
+            RIA.step0 = 1;
+            uint8_t tile_index = RIA.rw0;
+
+            // Check if tile is a dot (116) or power pellet (117)
+            if (tile_index == 116 || tile_index == 117) {
+                uint32_t dot_pts = get_current_dot_value(player.pellets_eaten);
+                player.score += dot_pts;
+                player.pellets_eaten++;
+
+                update_player_score_display(player.score);
+
+                uint8_t score_tile = get_score_tile_index(dot_pts);
+                push_score_popup(tile_x, tile_y, score_tile);
+
+                // Check if clearing this pellet triggered side prize spawning
+                update_side_pellets_status();
+            }
+
+            // Check if Pacman is consuming an active prize using visual drawn coordinates
+            check_and_eat_prize(drawn_x, drawn_y);
+        }
     }
+}
 
-    int16_t check_x = world_x;
-    int16_t check_y = world_y;
+// 8.8 Fixed-Point Speed Lookup Table (High Byte = Pixels, Low Byte = Sub-pixel fraction)
+const uint16_t SPEED_TABLE[13] = {
+    0x0100, // Level 0: 1.00 px/frame
+    0x0120, // Level 1: 1.12 px/frame
+    0x0140, // Level 2: 1.25 px/frame
+    0x0160, // Level 3: 1.37 px/frame
+    0x0180, // Level 4: 1.50 px/frame
+    0x01A0, // Level 5: 1.62 px/frame
+    0x01C0, // Level 6: 1.75 px/frame
+    0x01E0, // Level 7: 1.87 px/frame
+    0x0200, // Level 8: 2.00 px/frame
+    0x0220, // Level 9: 2.12 px/frame
+    0x0240, // Level 10: 2.25 px/frame
+    0x0260, // Level 11: 2.37 px/frame
+    0x0280, // Level 12: 2.50 px/frame (Max Cap)
+};
 
-    while (check_x < 0) check_x += WORLD_WIDTH;
-    while (check_x >= WORLD_WIDTH) check_x -= WORLD_WIDTH;
-    while (check_y < 0) check_y += WORLD_HEIGHT;
-    while (check_y >= WORLD_HEIGHT) check_y -= WORLD_HEIGHT;
+static uint16_t s_speed_subpixel_x = 0;
+static uint16_t s_speed_subpixel_y = 0;
 
-    uint16_t tile_x = (uint16_t)(check_x / MAZE_TILES_SIZE_PX);
-    uint16_t tile_y = (uint16_t)(check_y / MAZE_TILES_SIZE_PX);
-
-    if (tile_x >= MAZE_MAP_WIDTH) tile_x %= MAZE_MAP_WIDTH;
-    if (tile_y >= MAZE_MAP_HEIGHT) tile_y %= MAZE_MAP_HEIGHT;
-
-    uint16_t offset = tile_y * MAZE_MAP_WIDTH + tile_x;
-
-    RIA.addr0 = MAZE_MAP_DATA + offset;
-    RIA.step0 = 1;
-    uint8_t tile_index = RIA.rw0;
-
-    // Check if tile is a dot (116) or power pellet (117)
-    if (tile_index == 116 || tile_index == 117) {
-        uint32_t dot_pts = get_current_dot_value(player.pellets_eaten);
-        player.score += dot_pts;
-        player.pellets_eaten++;
-
-        update_player_score_display(player.score);
-
-        uint8_t score_tile = get_score_tile_index(dot_pts);
-        push_score_popup(tile_x, tile_y, score_tile);
-
-        // Check if clearing this pellet triggered side prize spawning
-        update_side_pellets_status();
-    }
-
-    // Check if Pacman is consuming an active prize
-    check_and_eat_prize(tile_x, tile_y);
+static uint8_t get_speed_level_index(uint32_t score) {
+    uint32_t lvl = score / 20000;
+    if (lvl > 12) lvl = 12;
+    return (uint8_t)lvl;
 }
 
 void player_update_motion(const input_actions_t *actions) {
@@ -201,27 +238,52 @@ void player_update_motion(const input_actions_t *actions) {
         }
     }
 
-    // 3. Continuous arcade movement (1px step per frame)
+    // 3. Continuous arcade movement using 8.8 fixed-point speed table
     if (player.dir != DIR_NONE) {
         int8_t dx, dy;
         get_dir_offset(player.dir, &dx, &dy);
 
-        int16_t next_px = player.world_px + dx;
-        int16_t next_py = player.world_py + dy;
+        uint8_t speed_lvl = get_speed_level_index(player.score);
+        uint16_t speed_fp = SPEED_TABLE[speed_lvl];
 
-        // Check if step forward is blocked by a wall
-        bool is_blocked = false;
-        if (player.world_px % MAZE_TILES_SIZE_PX == 0 && player.world_py % MAZE_TILES_SIZE_PX == 0) {
-            // At tile boundary: check next full tile in direction of motion
-            is_blocked = !can_step_dir(player.world_px, player.world_py, player.dir);
+        int16_t move_pixels = 0;
+        if (dx != 0) {
+            s_speed_subpixel_x += speed_fp;
+            move_pixels = s_speed_subpixel_x >> 8;
+            s_speed_subpixel_x &= 0x00FF;
+        } else if (dy != 0) {
+            s_speed_subpixel_y += speed_fp;
+            move_pixels = s_speed_subpixel_y >> 8;
+            s_speed_subpixel_y &= 0x00FF;
         }
 
-        if (!is_blocked) {
-            player.world_px = next_px;
-            player.world_py = next_py;
-        } else {
-            player.dir = DIR_NONE; // Stop at wall intersection
+        for (int16_t step = 0; step < move_pixels; step++) {
+            int16_t next_px = player.world_px + dx;
+            int16_t next_py = player.world_py + dy;
+
+            // Check if step forward is blocked by a wall
+            bool is_blocked = false;
+            if (player.world_px % MAZE_TILES_SIZE_PX == 0 && player.world_py % MAZE_TILES_SIZE_PX == 0) {
+                // At tile boundary: check next full tile in direction of motion
+                is_blocked = !can_step_dir(player.world_px, player.world_py, player.dir);
+            }
+
+            if (!is_blocked) {
+                player.world_px = next_px;
+                player.world_py = next_py;
+
+                // Check and eat pellets/prizes on every 1px step to ensure no pickups are skipped
+                check_and_eat_pellet(player.world_px, player.world_py);
+            } else {
+                player.dir = DIR_NONE; // Stop at wall intersection
+                s_speed_subpixel_x = 0;
+                s_speed_subpixel_y = 0;
+                break;
+            }
         }
+    } else {
+        s_speed_subpixel_x = 0;
+        s_speed_subpixel_y = 0;
     }
 
     // Check if Pacman ate a pellet on current tile
@@ -271,9 +333,6 @@ void player_update_motion(const input_actions_t *actions) {
     } else if (player.world_px >= WORLD_WIDTH) {
         player.world_px -= WORLD_WIDTH;
     }
-
-#define VISUAL_X_OFFSET (-3) // Visual horizontal draw offset (-3px)
-#define VISUAL_Y_OFFSET (-3) // Visual vertical draw offset (-3px)
 
     // Vertical tunnel wrapping using Pac-Man's drawn screen position (world_py + VISUAL_Y_OFFSET)
     int16_t drawn_y = player.world_py + VISUAL_Y_OFFSET;
