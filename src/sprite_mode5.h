@@ -14,6 +14,9 @@ typedef struct {
     bool in_house;
     int16_t min_home_py; // Top Y bound in home box
     int16_t max_home_py; // Bottom Y bound in home box
+    uint8_t state;       // 0: HOME_BOUNCE, 1: MOVING_TO_SLOT, 2: EXITING_HOUSE, 3: OUTSIDE
+    uint16_t sub_py;     // 8.8 fixed-point subpixel Y for smooth exit speed
+    uint16_t sub_px;     // 8.8 fixed-point subpixel X for smooth slot movement
 } ghost_struct;
 
 extern ghost_struct ghosts[NGHOSTS];
