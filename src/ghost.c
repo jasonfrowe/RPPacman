@@ -26,6 +26,24 @@ void ghost_update_motion(void) {
     }
 
     for (int i = 0; i < NGHOSTS; i++) {
+        // --- 1. In-House Bounce Motion ---
+        if (ghosts[i].in_house) {
+            if (ghosts[i].dir == DIR_DOWN) {
+                ghosts[i].world_py++;
+                if (ghosts[i].world_py >= ghosts[i].max_home_py) {
+                    ghosts[i].world_py = ghosts[i].max_home_py;
+                    ghosts[i].dir = DIR_UP; // Reverse to UP when hitting bottom
+                }
+            } else if (ghosts[i].dir == DIR_UP) {
+                ghosts[i].world_py--;
+                if (ghosts[i].world_py <= ghosts[i].min_home_py) {
+                    ghosts[i].world_py = ghosts[i].min_home_py;
+                    ghosts[i].dir = DIR_DOWN; // Reverse to DOWN when hitting top
+                }
+            }
+        }
+
+        // --- 2. Sprite Frame Selection ---
         uint8_t base_frame = GHOST_BASE_FRAMES[i];
         uint8_t dir_offset = 0;
 
