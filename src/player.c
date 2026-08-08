@@ -161,7 +161,8 @@ static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
         uint8_t score_tile = get_score_tile_index(dot_pts);
         push_score_popup(tile_x, tile_y, score_tile);
 
-        // Check if clearing this pellet triggered side prize spawning
+        // Update side pellet counter and check if clearing this pellet triggered prize spawning
+        on_pellet_eaten(tile_x);
         update_side_pellets_status();
     }
 
@@ -239,6 +240,14 @@ void player_update_motion(const input_actions_t *actions) {
 
     // 2. Process direction change
     if (queued_dir != DIR_NONE) {
+        int16_t current_drawn_y = player.world_py + VISUAL_Y_OFFSET;
+
+        // Ignore left/right inputs when Pac-Man is in vertical tunnel regions (< 32px or > 215px)
+        bool is_in_vertical_tunnel = (current_drawn_y < 32) || ((current_drawn_y + SPRITE_SIZE_PX) > 215);
+        if (is_in_vertical_tunnel && (queued_dir == DIR_LEFT || queued_dir == DIR_RIGHT)) {
+            queued_dir = player.dir;
+        }
+
         // Immediate 180-degree reversal is always allowed
         if ((player.dir == DIR_RIGHT && queued_dir == DIR_LEFT) ||
             (player.dir == DIR_LEFT && queued_dir == DIR_RIGHT) ||

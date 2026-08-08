@@ -23,6 +23,7 @@ static bool init_graphics(void)
     init_ghost_data();
     sprite_mode5_init();
     tile_mode2_text_map_init();
+    init_side_pellet_counters();
 
     return true;
 }

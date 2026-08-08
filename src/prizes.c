@@ -36,6 +36,29 @@ typedef struct {
 } maze_transition_t;
 
 static maze_transition_t s_transitions[2]; // Index 0: Left side, Index 1: Right side
+static uint16_t left_side_pellets_remaining = 0;
+static uint16_t right_side_pellets_remaining = 0;
+
+static uint16_t count_level_side_pellets(uint8_t level, bool is_right_side) {
+    uint16_t src_map_base = ALL_MAZE_MAPS_DATA + ((uint16_t)level * (MAZE_MAP_WIDTH * MAZE_MAP_HEIGHT));
+    uint16_t start_x = is_right_side ? 28 : 0;
+    uint16_t end_x   = is_right_side ? 46 : 18;
+    uint16_t count = 0;
+
+    for (uint16_t ty = 4; ty <= 26; ty++) {
+        for (uint16_t tx = start_x; tx <= end_x; tx++) {
+            uint16_t offset = ty * MAZE_MAP_WIDTH + tx;
+            RIA.addr0 = src_map_base + offset;
+            RIA.step0 = 1;
+            uint8_t tile_val = RIA.rw0;
+
+            if (tile_val == 116 || tile_val == 117) {
+                count++;
+            }
+        }
+    }
+    return count;
+}
 
 static void copy_single_column_with_offset(uint8_t level, uint16_t tx, uint8_t offset_val) {
     uint16_t src_map_base = ALL_MAZE_MAPS_DATA + ((uint16_t)level * (MAZE_MAP_WIDTH * MAZE_MAP_HEIGHT));
@@ -69,6 +92,13 @@ static void trigger_maze_transition(uint8_t target_level, bool is_right_side) {
     s_transitions[idx].frame_timer = 0;
     s_transitions[idx].anim_frame_idx = 0;
     s_transitions[idx].elapsed_frame = 0;
+
+    // Immediately count and initialize remaining pellets for the newly loaded target maze level
+    if (is_right_side) {
+        right_side_pellets_remaining = count_level_side_pellets(target_level, true);
+    } else {
+        left_side_pellets_remaining = count_level_side_pellets(target_level, false);
+    }
 }
 
 void update_maze_munchers_animation(void) {
@@ -176,36 +206,34 @@ void update_maze_munchers_animation(void) {
     }
 }
 
-static bool is_side_cleared(bool is_right_side) {
-    uint16_t start_x = is_right_side ? 28 : 0;
-    uint16_t end_x   = is_right_side ? 46 : 18;
+void init_side_pellet_counters(void) {
+    left_side_pellets_remaining = count_level_side_pellets(left_side_level, false);
+    right_side_pellets_remaining = count_level_side_pellets(right_side_level, true);
+}
 
-    for (uint16_t ty = 4; ty <= 26; ty++) {
-        for (uint16_t tx = start_x; tx <= end_x; tx++) {
-            uint16_t offset = ty * MAZE_MAP_WIDTH + tx;
-            RIA.addr0 = MAZE_MAP_DATA + offset;
-            RIA.step0 = 1;
-            uint8_t tile_val = RIA.rw0;
-
-            if (tile_val == 116 || tile_val == 117) {
-                return false; // Found a remaining pellet or super pellet
-            }
+void on_pellet_eaten(uint16_t tile_x) {
+    if (tile_x <= 18) {
+        if (left_side_pellets_remaining > 0) {
+            left_side_pellets_remaining--;
+        }
+    } else if (tile_x >= 28 && tile_x <= 46) {
+        if (right_side_pellets_remaining > 0) {
+            right_side_pellets_remaining--;
         }
     }
-    return true; // All pellets cleared on this side
 }
 
 void update_side_pellets_status(void) {
-    // 1. Check left side clear condition
-    if (!left_prize_active && is_side_cleared(false)) {
+    // 1. Check left side clear condition (O(1) counter check)
+    if (!left_prize_active && left_side_pellets_remaining == 0) {
         left_prize_active = true;
         left_prize_sprite = get_side_prize_sprite_index(left_prize_count);
         left_prize_count++;
         prizes[0].sparkle_timer = 0;
     }
 
-    // 2. Check right side clear condition
-    if (!right_prize_active && is_side_cleared(true)) {
+    // 2. Check right side clear condition (O(1) counter check)
+    if (!right_prize_active && right_side_pellets_remaining == 0) {
         right_prize_active = true;
         right_prize_sprite = get_side_prize_sprite_index(right_prize_count);
         right_prize_count++;
