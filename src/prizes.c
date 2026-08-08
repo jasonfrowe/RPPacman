@@ -132,7 +132,11 @@ void prize_update_motion(void) {
         bool is_active = (i == 0) ? left_prize_active : right_prize_active;
         uint8_t current_level = (i == 0) ? left_side_level : right_side_level;
 
+        static bool s_prize_was_active[NPRIZES] = {false, false};
+
         if (is_active) {
+            s_prize_was_active[i] = true;
+
             int16_t dx = 0, dy = 0;
             uint8_t s_frame = 81; // Sparkle frame index
             uint8_t t = prizes[i].sparkle_timer;
@@ -204,23 +208,47 @@ void prize_update_motion(void) {
                 prizes[i].x_sparkle_px = -32;
                 prizes[i].y_sparkle_px = -32;
             }
+
+            // Update prize sprite in XRAM while active
+            unsigned current_prize_config = PRIZE_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+            if (prizes[i].frame == 48) {
+                // When prize frame is blank (during 'a' and '2p'), park off-screen (-32, -32)
+                xram0_struct_set(current_prize_config, vga_mode5_sprite_t, x_pos_px, -32);
+                xram0_struct_set(current_prize_config, vga_mode5_sprite_t, y_pos_px, -32);
+            } else {
+                xram0_struct_set(current_prize_config, vga_mode5_sprite_t, x_pos_px, prizes[i].x_pos_px);
+                xram0_struct_set(current_prize_config, vga_mode5_sprite_t, y_pos_px, prizes[i].y_pos_px);
+            }
+            xram0_struct_set(current_prize_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (prizes[i].frame * SPRITE_FRAME_SIZE)));
+
+            // Update sparkle sprite in XRAM while active
+            unsigned current_sparkle_config = PRIZE_SPARKLE_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+            if (prizes[i].sparkle_frame == 48) {
+                xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, x_pos_px, -32);
+                xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, y_pos_px, -32);
+            } else {
+                xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, x_pos_px, prizes[i].x_sparkle_px);
+                xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, y_pos_px, prizes[i].y_sparkle_px);
+            }
+            xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (prizes[i].sparkle_frame * SPRITE_FRAME_SIZE)));
+
         } else {
-            prizes[i].frame = 48;
-            prizes[i].sparkle_frame = 48;
-            prizes[i].x_sparkle_px = -32;
-            prizes[i].y_sparkle_px = -32;
+            // Prize is inactive: if it transitioned to inactive this frame, park off-screen and stop updating
+            if (s_prize_was_active[i]) {
+                s_prize_was_active[i] = false;
+                prizes[i].frame = 48;
+                prizes[i].sparkle_frame = 48;
+
+                unsigned current_prize_config = PRIZE_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+                xram0_struct_set(current_prize_config, vga_mode5_sprite_t, x_pos_px, -32);
+                xram0_struct_set(current_prize_config, vga_mode5_sprite_t, y_pos_px, -32);
+                xram0_struct_set(current_prize_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+
+                unsigned current_sparkle_config = PRIZE_SPARKLE_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+                xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, x_pos_px, -32);
+                xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, y_pos_px, -32);
+                xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+            }
         }
-
-        // Update the prize sprite position and frame in XRAM
-        unsigned current_prize_config = PRIZE_CONFIG + (i * sizeof(vga_mode5_sprite_t));
-        xram0_struct_set(current_prize_config, vga_mode5_sprite_t, x_pos_px, prizes[i].x_pos_px);
-        xram0_struct_set(current_prize_config, vga_mode5_sprite_t, y_pos_px, prizes[i].y_pos_px);
-        xram0_struct_set(current_prize_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (prizes[i].frame * SPRITE_FRAME_SIZE)));
-
-        // Update the prize sparkle sprite position and frame in XRAM
-        unsigned current_sparkle_config = PRIZE_SPARKLE_CONFIG + (i * sizeof(vga_mode5_sprite_t));
-        xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, x_pos_px, prizes[i].x_sparkle_px);
-        xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, y_pos_px, prizes[i].y_sparkle_px);
-        xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (prizes[i].sparkle_frame * SPRITE_FRAME_SIZE)));
     }
 }
