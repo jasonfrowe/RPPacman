@@ -65,21 +65,13 @@ void update_side_pellets_status(void) {
     // 1. Check left side clear condition
     if (!left_prize_active && is_side_cleared(false)) {
         left_prize_active = true;
-        prizes[0].frame = get_prize_sprite_index(left_side_level);
-
-        // Update prize 0 sprite pointer in XRAM
-        unsigned prize_config0 = PRIZE_CONFIG + (0 * sizeof(vga_mode5_sprite_t));
-        xram0_struct_set(prize_config0, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (prizes[0].frame * SPRITE_FRAME_SIZE)));
+        prizes[0].sparkle_timer = 0;
     }
 
     // 2. Check right side clear condition
     if (!right_prize_active && is_side_cleared(true)) {
         right_prize_active = true;
-        prizes[1].frame = get_prize_sprite_index(right_side_level);
-
-        // Update prize 1 sprite pointer in XRAM
-        unsigned prize_config1 = PRIZE_CONFIG + (1 * sizeof(vga_mode5_sprite_t));
-        xram0_struct_set(prize_config1, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (prizes[1].frame * SPRITE_FRAME_SIZE)));
+        prizes[1].sparkle_timer = 0;
     }
 }
 
@@ -88,9 +80,13 @@ void check_and_eat_prize(uint16_t tile_x, uint16_t tile_y) {
     if (left_prize_active && (tile_x == 28 || tile_x == 29) && (tile_y == 15 || tile_y == 16)) {
         left_prize_active = false;
         prizes[0].frame = 48; // Blank sprite
+        prizes[0].sparkle_frame = 48;
 
         unsigned prize_config0 = PRIZE_CONFIG + (0 * sizeof(vga_mode5_sprite_t));
         xram0_struct_set(prize_config0, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (prizes[0].frame * SPRITE_FRAME_SIZE)));
+
+        unsigned prize_sparkle_config0 = PRIZE_SPARKLE_CONFIG + (0 * sizeof(vga_mode5_sprite_t));
+        xram0_struct_set(prize_sparkle_config0, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
 
         // Advance left level: 0..10, then loop back to 1
         left_side_level++;
@@ -103,9 +99,13 @@ void check_and_eat_prize(uint16_t tile_x, uint16_t tile_y) {
     if (right_prize_active && (tile_x == 17 || tile_x == 18) && (tile_y == 15 || tile_y == 16)) {
         right_prize_active = false;
         prizes[1].frame = 48; // Blank sprite
+        prizes[1].sparkle_frame = 48;
 
         unsigned prize_config1 = PRIZE_CONFIG + (1 * sizeof(vga_mode5_sprite_t));
         xram0_struct_set(prize_config1, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (prizes[1].frame * SPRITE_FRAME_SIZE)));
+
+        unsigned prize_sparkle_config1 = PRIZE_SPARKLE_CONFIG + (1 * sizeof(vga_mode5_sprite_t));
+        xram0_struct_set(prize_sparkle_config1, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
 
         // Advance right level: 0..10, then loop back to 1
         right_side_level++;
@@ -129,9 +129,98 @@ void prize_update_motion(void) {
         prizes[i].x_pos_px = prizes[i].world_px + maze_dx;
         prizes[i].y_pos_px = prizes[i].world_py;
 
-        // Update the prize position in XRAM
+        bool is_active = (i == 0) ? left_prize_active : right_prize_active;
+        uint8_t current_level = (i == 0) ? left_side_level : right_side_level;
+
+        if (is_active) {
+            int16_t dx = 0, dy = 0;
+            uint8_t s_frame = 81; // Sparkle frame index
+            uint8_t t = prizes[i].sparkle_timer;
+
+            // Sparkle sequence step evaluation across 27 frames
+            // a, 2p, S b, 3p, c, 7p, d, 3p, e, 3p, f, 3p, g, 3p, h, 3p
+            if (t == 0) {
+                // a = (-8, 2)
+                dx = -8; dy = 2;
+                prizes[i].frame = 48; // Blank prize sprite before 'S'
+            } else if (t == 1 || t == 2) {
+                // 2p wait
+                dx = -8; dy = 2;
+                prizes[i].frame = 48;
+            } else if (t == 3) {
+                // S, b = (-8, 4)
+                prizes[i].frame = get_prize_sprite_index(current_level); // Draw prize sprite
+                dx = -8; dy = 4;
+            } else if (t >= 4 && t <= 6) {
+                // 3p wait
+                dx = -8; dy = 4;
+            } else if (t == 7) {
+                // c = (3, -2)
+                dx = 3; dy = -2;
+            } else if (t >= 8 && t <= 14) {
+                // 7p wait
+                dx = 3; dy = -2;
+            } else if (t == 15) {
+                // d = (-5, -2)
+                dx = -5; dy = -2;
+            } else if (t >= 16 && t <= 18) {
+                // 3p wait
+                dx = -5; dy = -2;
+            } else if (t == 19) {
+                // e = (-5, -6)
+                dx = -5; dy = -6;
+            } else if (t >= 20 && t <= 22) {
+                // 3p wait
+                dx = -5; dy = -6;
+            } else if (t == 23) {
+                // f = (+5, -6)
+                dx = 5; dy = -6;
+            } else if (t >= 24 && t <= 26) {
+                // 3p wait
+                dx = 5; dy = -6;
+            } else if (t == 27) {
+                // g = (+5, -10)
+                dx = 5; dy = -10;
+            } else if (t >= 28 && t <= 30) {
+                // 3p wait
+                dx = 5; dy = -10;
+            } else if (t == 31) {
+                // h = (-2, -10)
+                dx = -2; dy = -10;
+            } else if (t >= 32 && t <= 34) {
+                // 3p wait
+                dx = -2; dy = -10;
+            }
+
+            if (t <= 34) {
+                prizes[i].sparkle_frame = s_frame;
+                prizes[i].x_sparkle_px = prizes[i].x_pos_px + dx;
+                prizes[i].y_sparkle_px = prizes[i].y_pos_px + dy;
+                prizes[i].sparkle_timer++;
+            } else {
+                // Sequence completed: hide sparkle sprite and hold prize visible
+                prizes[i].frame = get_prize_sprite_index(current_level);
+                prizes[i].sparkle_frame = 48; // Blank sparkle
+                prizes[i].x_sparkle_px = -32;
+                prizes[i].y_sparkle_px = -32;
+            }
+        } else {
+            prizes[i].frame = 48;
+            prizes[i].sparkle_frame = 48;
+            prizes[i].x_sparkle_px = -32;
+            prizes[i].y_sparkle_px = -32;
+        }
+
+        // Update the prize sprite position and frame in XRAM
         unsigned current_prize_config = PRIZE_CONFIG + (i * sizeof(vga_mode5_sprite_t));
         xram0_struct_set(current_prize_config, vga_mode5_sprite_t, x_pos_px, prizes[i].x_pos_px);
         xram0_struct_set(current_prize_config, vga_mode5_sprite_t, y_pos_px, prizes[i].y_pos_px);
+        xram0_struct_set(current_prize_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (prizes[i].frame * SPRITE_FRAME_SIZE)));
+
+        // Update the prize sparkle sprite position and frame in XRAM
+        unsigned current_sparkle_config = PRIZE_SPARKLE_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+        xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, x_pos_px, prizes[i].x_sparkle_px);
+        xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, y_pos_px, prizes[i].y_sparkle_px);
+        xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (prizes[i].sparkle_frame * SPRITE_FRAME_SIZE)));
     }
 }

@@ -43,6 +43,8 @@ typedef struct {
     int8_t frame;
     int16_t x_sparkle_px; // position of sparkle effect animation
     int16_t y_sparkle_px;
+    uint8_t sparkle_timer; // Frame step counter for sparkle animation
+    uint8_t sparkle_frame; // Active sparkle sprite frame (81 or 48)
 } prize_struct;
 
 extern prize_struct prizes[NPRIZES];

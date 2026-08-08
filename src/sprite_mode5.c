@@ -15,8 +15,8 @@ ghost_struct ghosts[NGHOSTS];
 player_struct player;
 
 prize_struct prizes[NPRIZES] = {
-    {0, 0, 28 * MAZE_TILES_SIZE_PX - 5, 15 * MAZE_TILES_SIZE_PX - 3, 48, -32}, // Left clear prize -> tile (28, 15)
-    {0, 0, 18 * MAZE_TILES_SIZE_PX - 5, 15 * MAZE_TILES_SIZE_PX - 3, 48, -32}  // Right clear prize -> tile (18, 15)
+    {0, 0, 28 * MAZE_TILES_SIZE_PX - 5, 15 * MAZE_TILES_SIZE_PX - 3, 48, -32, -32, 0, 48}, // Left clear prize -> tile (28, 15)
+    {0, 0, 18 * MAZE_TILES_SIZE_PX - 5, 15 * MAZE_TILES_SIZE_PX - 3, 48, -32, -32, 0, 48}  // Right clear prize -> tile (18, 15)
 };
 
 void sprite_mode5_init(void) {
