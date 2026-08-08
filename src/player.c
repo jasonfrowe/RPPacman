@@ -202,7 +202,7 @@ const uint16_t SPEED_TABLE[22] = {
 static uint16_t s_speed_subpixel_x = 0;
 static uint16_t s_speed_subpixel_y = 0;
 
-static uint8_t get_speed_level_index(void) {
+uint8_t get_speed_level_index(void) {
     uint8_t max_count = (left_prize_count > right_prize_count) ? left_prize_count : right_prize_count;
     if (max_count > 21) max_count = 21;
     return max_count;
