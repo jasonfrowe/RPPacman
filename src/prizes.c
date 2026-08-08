@@ -8,14 +8,18 @@
 
 uint8_t left_side_level = 0;
 uint8_t right_side_level = 0;
+uint8_t left_prize_count = 0;
+uint8_t right_prize_count = 0;
 
 static bool left_prize_active = false;
 static bool right_prize_active = false;
+static uint8_t left_prize_sprite = 49;
+static uint8_t right_prize_sprite = 49;
 
-static uint8_t get_prize_sprite_index(uint8_t level) {
-    uint8_t index = 49 + level;
-    if (index > 70) index = 70;
-    return index;
+static uint8_t get_side_prize_sprite_index(uint8_t count) {
+    uint16_t idx = 49 + (uint16_t)count;
+    if (idx > 70) idx = 70;
+    return (uint8_t)idx;
 }
 
 #define SIDE_MAP_COLS 19
@@ -201,12 +205,16 @@ void update_side_pellets_status(void) {
     // 1. Check left side clear condition
     if (!left_prize_active && is_side_cleared(false)) {
         left_prize_active = true;
+        left_prize_sprite = get_side_prize_sprite_index(left_prize_count);
+        left_prize_count++;
         prizes[0].sparkle_timer = 0;
     }
 
     // 2. Check right side clear condition
     if (!right_prize_active && is_side_cleared(true)) {
         right_prize_active = true;
+        right_prize_sprite = get_side_prize_sprite_index(right_prize_count);
+        right_prize_count++;
         prizes[1].sparkle_timer = 0;
     }
 }
@@ -268,7 +276,7 @@ void prize_update_motion(void) {
         prizes[i].y_pos_px = prizes[i].world_py;
 
         bool is_active = (i == 0) ? left_prize_active : right_prize_active;
-        uint8_t current_level = (i == 0) ? left_side_level : right_side_level;
+        uint8_t current_prize_sprite = (i == 0) ? left_prize_sprite : right_prize_sprite;
 
         static bool s_prize_was_active[NPRIZES] = {false, false};
 
@@ -291,7 +299,7 @@ void prize_update_motion(void) {
                 prizes[i].frame = 48;
             } else if (t == 3) {
                 // S, b = (-8, 4)
-                prizes[i].frame = get_prize_sprite_index(current_level); // Draw prize sprite
+                prizes[i].frame = current_prize_sprite; // Draw prize sprite
                 dx = -8; dy = 4;
             } else if (t >= 4 && t <= 6) {
                 // 3p wait
@@ -341,7 +349,7 @@ void prize_update_motion(void) {
                 prizes[i].sparkle_timer++;
             } else {
                 // Sequence completed: hide sparkle sprite and hold prize visible
-                prizes[i].frame = get_prize_sprite_index(current_level);
+                prizes[i].frame = current_prize_sprite;
                 prizes[i].sparkle_frame = 48; // Blank sparkle
                 prizes[i].x_sparkle_px = -32;
                 prizes[i].y_sparkle_px = -32;
