@@ -399,7 +399,7 @@ void player_update_motion(const input_actions_t *actions) {
     xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, y_pos_px, player.y_pos_px);
     xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (player.frame * SPRITE_FRAME_SIZE)));
 
-    // Update Ghost screen positions relative to endless maze scroll
+    // Update Ghost screen positions relative to endless maze scroll (with visual offsets)
     for (int i = 0; i < NGHOSTS; i++) {
         if (ghosts[i].world_px < 0) {
             ghosts[i].world_px += WORLD_WIDTH;
@@ -407,8 +407,8 @@ void player_update_motion(const input_actions_t *actions) {
             ghosts[i].world_px -= WORLD_WIDTH;
         }
 
-        ghosts[i].x_pos_px = ghosts[i].world_px + maze_dx;
-        ghosts[i].y_pos_px = ghosts[i].world_py;
+        ghosts[i].x_pos_px = ghosts[i].world_px + maze_dx + VISUAL_X_OFFSET;
+        ghosts[i].y_pos_px = ghosts[i].world_py + VISUAL_Y_OFFSET;
 
         uint16_t current_ghost_config = GHOST_CONFIG + (i * sizeof(vga_mode5_sprite_t));
         xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, x_pos_px, ghosts[i].x_pos_px);

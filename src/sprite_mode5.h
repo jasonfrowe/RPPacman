@@ -10,6 +10,10 @@ typedef struct {
     int16_t world_px;
     int16_t world_py;
     int8_t frame;
+    int8_t dir; // Movement direction: DIR_NONE, DIR_LEFT, DIR_RIGHT, DIR_UP, DIR_DOWN
+    bool in_house;
+    int16_t min_home_py; // Top Y bound in home box
+    int16_t max_home_py; // Bottom Y bound in home box
 } ghost_struct;
 
 extern ghost_struct ghosts[NGHOSTS];
