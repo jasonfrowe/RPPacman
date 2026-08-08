@@ -13,6 +13,7 @@
 // GHOST parameters
 #define NGHOSTS 4                                   // Number of ghosts in the game
 #define NPRIZES 2                                   // Number of prizes in the game
+#define NMAZE_MUNCHERS 12                           // Number of maze transition munchers 
 
 // Sprite data configuration
 #define SPRITE_DATA_START       0x0000U             // Starting address in XRAM for sprite data
@@ -27,7 +28,7 @@
 #define MAZE_MAP_HEIGHT         30                  // Height of the maze map in tiles
 
 #define SPRITE_DATA            (MAZE_MAP_DATA + MAZE_MAP_DATA_SIZE) // Address for player sprite data
-#define SPRITE_DATA_SIZE       (0x3180U)            // Size of player sprite data (12544 bytes)
+#define SPRITE_DATA_SIZE       (0x3580U)            // Size of player sprite data (107 frames * 16x16 = 13696 bytes)
 #define SPRITE_SIZE_PX          16                  // Size of player sprite in pixels
 #define SPRITE_FRAME_SIZE       0x0080U             // 128 bytes per 16x16 4bpp frame
 
@@ -67,5 +68,6 @@ extern unsigned GHOST_CONFIG;                       // Ghost configuration
 extern unsigned TEXT_MAP_CONFIG;                    // Text map configuration
 extern unsigned PRIZE_CONFIG;                       // Prize configuration
 extern unsigned PRIZE_SPARKLE_CONFIG;                // Prize sparkle configuration
+extern unsigned MAZE_MUNCHERS_CONFIG;              // Maze transition configuration
 
 #endif // CONSTANTS_H

@@ -9,6 +9,7 @@ unsigned PLAYER_CONFIG;
 unsigned GHOST_CONFIG;
 unsigned PRIZE_CONFIG;
 unsigned PRIZE_SPARKLE_CONFIG;
+unsigned MAZE_MUNCHERS_CONFIG;
 
 
 ghost_struct ghosts[NGHOSTS];
@@ -31,7 +32,18 @@ void sprite_mode5_init(void) {
 
     player.frame = 5; // Start with the "facing left / closed" frame for the player sprite
 
-    PRIZE_CONFIG = MAZE_CONFIG + sizeof(vga_mode2_config_t); // After maze config 
+    MAZE_MUNCHERS_CONFIG = MAZE_CONFIG + sizeof(vga_mode2_config_t); // After maze config
+
+    for (int i = 0; i < NMAZE_MUNCHERS; i++) {
+        unsigned muncher_config = MAZE_MUNCHERS_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+        xram0_struct_set(muncher_config, vga_mode5_sprite_t, x_pos_px, -32);  // Park off-screen (-32, -32)
+        xram0_struct_set(muncher_config, vga_mode5_sprite_t, y_pos_px, -32);
+        xram0_struct_set(muncher_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE))); // Set to blank sprite frame (48)
+        xram0_struct_set(muncher_config, vga_mode5_sprite_t, palette_ptr, PLAYER_PALETTE_ADDR);
+    }
+
+
+    PRIZE_CONFIG = MAZE_MUNCHERS_CONFIG + sizeof(vga_mode2_config_t); // After maze transition config
     
     for (int i = 0; i < NPRIZES; i++) {
         prizes[i].x_pos_px = prizes[i].world_px + maze_dx;
