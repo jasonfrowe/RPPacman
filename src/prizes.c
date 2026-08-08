@@ -18,26 +18,110 @@ static uint8_t get_prize_sprite_index(uint8_t level) {
     return index;
 }
 
-static void copy_maze_half(uint8_t level, bool is_right_side) {
-    // Each map in ALL_MAZE_MAPS_DATA is 47 * 30 = 1410 bytes
+typedef struct {
+    bool active;
+    bool is_right_side;
+    uint8_t target_level;
+    int8_t current_col_step; // 0..18
+    uint8_t frame_timer;     // counts 0, 1 -> update column every 2 frames
+    uint8_t anim_frame_idx;  // muncher sprite animation index
+} maze_transition_t;
+
+static maze_transition_t s_transition = { false, false, 0, 0, 0, 0 };
+
+static void copy_single_column(uint8_t level, uint16_t tx) {
     uint16_t src_map_base = ALL_MAZE_MAPS_DATA + ((uint16_t)level * (MAZE_MAP_WIDTH * MAZE_MAP_HEIGHT));
 
-    uint16_t start_x = is_right_side ? 28 : 0;
-    uint16_t end_x   = is_right_side ? 46 : 18;
-
     for (uint16_t ty = 4; ty <= 26; ty++) {
-        for (uint16_t tx = start_x; tx <= end_x; tx++) {
-            uint16_t offset = ty * MAZE_MAP_WIDTH + tx;
+        uint16_t offset = ty * MAZE_MAP_WIDTH + tx;
 
-            // Read tile byte from ALL_MAZE_MAPS_DATA map level
-            RIA.addr0 = src_map_base + offset;
-            RIA.step0 = 1;
-            uint8_t tile_val = RIA.rw0;
+        RIA.addr0 = src_map_base + offset;
+        RIA.step0 = 1;
+        uint8_t tile_val = RIA.rw0;
 
-            // Write tile byte to active MAZE_MAP_DATA
-            RIA.addr0 = MAZE_MAP_DATA + offset;
-            RIA.step0 = 1;
-            RIA.rw0 = tile_val;
+        RIA.addr0 = MAZE_MAP_DATA + offset;
+        RIA.step0 = 1;
+        RIA.rw0 = tile_val;
+    }
+}
+
+static void trigger_maze_transition(uint8_t target_level, bool is_right_side) {
+    s_transition.active = true;
+    s_transition.is_right_side = is_right_side;
+    s_transition.target_level = target_level;
+    s_transition.current_col_step = 0;
+    s_transition.frame_timer = 0;
+    s_transition.anim_frame_idx = 0;
+}
+
+void update_maze_munchers_animation(void) {
+    if (!s_transition.active) {
+        // Ensure munchers are parked off-screen when inactive
+        static bool s_munchers_were_active = false;
+        if (s_munchers_were_active) {
+            s_munchers_were_active = false;
+            for (int i = 0; i < NMAZE_MUNCHERS; i++) {
+                unsigned muncher_config = MAZE_MUNCHERS_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+                xram0_struct_set(muncher_config, vga_mode5_sprite_t, x_pos_px, -32);
+                xram0_struct_set(muncher_config, vga_mode5_sprite_t, y_pos_px, -32);
+                xram0_struct_set(muncher_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+            }
+        }
+        return;
+    }
+
+    static bool s_munchers_were_active = false;
+    s_munchers_were_active = true;
+
+    // Determine current tile column being replaced
+    uint16_t current_tx;
+    if (s_transition.is_right_side) {
+        // Right side: start at tile 28 moving right to 46 (steps 0..18)
+        current_tx = 28 + s_transition.current_col_step;
+    } else {
+        // Left side: start at tile 18 moving left to 0 (steps 0..18)
+        current_tx = 18 - s_transition.current_col_step;
+    }
+
+    // Every 2 frames, copy new maze column from ALL_MAZE_MAPS_DATA
+    if (s_transition.frame_timer == 0) {
+        copy_single_column(s_transition.target_level, current_tx);
+    }
+
+    // Calculate muncher X position in screen space (world tile X * 8 + maze_dx)
+    int16_t world_x_px = (int16_t)(current_tx * MAZE_TILES_SIZE_PX);
+    int16_t screen_x_px = world_x_px + maze_dx;
+
+    // Movement: 4px per frame offset (sub-tile alignment)
+    int16_t sub_offset_x = (s_transition.frame_timer == 1) ? (s_transition.is_right_side ? 4 : -4) : 0;
+    int16_t muncher_x = screen_x_px + sub_offset_x;
+
+    // Frame selection: Left replacement (98..105), Right replacement (90..97)
+    uint8_t base_sprite_frame = s_transition.is_right_side ? 90 : 98;
+    uint8_t muncher_sprite_frame = base_sprite_frame + (s_transition.anim_frame_idx % 8);
+
+    // Update 12 vertically stacked muncher sprites starting at y = 28px
+    for (int i = 0; i < NMAZE_MUNCHERS; i++) {
+        int16_t muncher_y = 28 + (i * 16);
+
+        unsigned muncher_config = MAZE_MUNCHERS_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+        xram0_struct_set(muncher_config, vga_mode5_sprite_t, x_pos_px, muncher_x);
+        xram0_struct_set(muncher_config, vga_mode5_sprite_t, y_pos_px, muncher_y);
+        xram0_struct_set(muncher_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (muncher_sprite_frame * SPRITE_FRAME_SIZE)));
+    }
+
+    // Advance animation frame counter
+    s_transition.anim_frame_idx++;
+
+    // Advance frame step timer (2 frames per column)
+    s_transition.frame_timer++;
+    if (s_transition.frame_timer >= 2) {
+        s_transition.frame_timer = 0;
+        s_transition.current_col_step++;
+
+        // Check if all 19 columns (0..18) have been replaced
+        if (s_transition.current_col_step > 18) {
+            s_transition.active = false;
         }
     }
 }
@@ -92,7 +176,8 @@ void check_and_eat_prize(uint16_t tile_x, uint16_t tile_y) {
         left_side_level++;
         if (left_side_level > 10) left_side_level = 1;
 
-        copy_maze_half(left_side_level, false);
+        // Trigger column-by-column animated maze munchers transition
+        trigger_maze_transition(left_side_level, false);
     }
 
     // Prize 1 (spawned when right side is cleared) is centered at tile (18, 15)
@@ -111,7 +196,8 @@ void check_and_eat_prize(uint16_t tile_x, uint16_t tile_y) {
         right_side_level++;
         if (right_side_level > 10) right_side_level = 1;
 
-        copy_maze_half(right_side_level, true);
+        // Trigger column-by-column animated maze munchers transition
+        trigger_maze_transition(right_side_level, true);
     }
 }
 

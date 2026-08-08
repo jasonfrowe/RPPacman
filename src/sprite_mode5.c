@@ -43,7 +43,7 @@ void sprite_mode5_init(void) {
     }
 
 
-    PRIZE_CONFIG = MAZE_MUNCHERS_CONFIG + sizeof(vga_mode2_config_t); // After maze transition config
+    PRIZE_CONFIG = MAZE_MUNCHERS_CONFIG + NMAZE_MUNCHERS * sizeof(vga_mode5_sprite_t); // After maze transition config
     
     for (int i = 0; i < NPRIZES; i++) {
         prizes[i].x_pos_px = prizes[i].world_px + maze_dx;
@@ -108,7 +108,7 @@ void sprite_mode5_init(void) {
     }
 
     // Mode 5 args: MODE, OPTIONS, CONFIG, LENGTH, PLANE, BEGIN, END
-    if (xreg_vga_mode(5, 0x0A, PRIZE_CONFIG, 1 + NGHOSTS + NPRIZES + NPRIZES, 1, 0, 0) < 0) {
+    if (xreg_vga_mode(5, 0x0A, MAZE_MUNCHERS_CONFIG, 1 + NGHOSTS + NPRIZES + NPRIZES + NMAZE_MUNCHERS, 1, 0, 0) < 0) {
         return;
     }
 

@@ -57,6 +57,7 @@ int main(void)
         player_update_motion(&actions);
         ghost_update_motion();
         prize_update_motion();
+        update_maze_munchers_animation();
 
         // 4. Update animation palettes
         tile_mode2_palette_update(frame);
