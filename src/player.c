@@ -12,7 +12,7 @@
 
 static int8_t queued_dir = DIR_NONE;
 
-static bool is_wall_tile(int16_t world_x, int16_t world_y) {
+bool is_wall_tile(int16_t world_x, int16_t world_y) {
     while (world_x < 0) world_x += WORLD_WIDTH;
     while (world_x >= WORLD_WIDTH) world_x -= WORLD_WIDTH;
     while (world_y < 0) world_y += WORLD_HEIGHT;
@@ -33,7 +33,7 @@ static bool is_wall_tile(int16_t world_x, int16_t world_y) {
     return (tile_index > 0 && tile_index < 116);
 }
 
-static void get_dir_offset(int8_t dir, int8_t *dx, int8_t *dy) {
+void get_dir_offset(int8_t dir, int8_t *dx, int8_t *dy) {
     *dx = 0;
     *dy = 0;
     switch (dir) {
@@ -44,7 +44,7 @@ static void get_dir_offset(int8_t dir, int8_t *dx, int8_t *dy) {
     }
 }
 
-static bool can_step_dir(int16_t world_x, int16_t world_y, int8_t dir) {
+bool can_step_dir(int16_t world_x, int16_t world_y, int8_t dir) {
     if (dir == DIR_NONE) return false;
     int8_t dx, dy;
     get_dir_offset(dir, &dx, &dy);

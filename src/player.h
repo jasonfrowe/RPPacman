@@ -12,5 +12,8 @@
 #define DIR_DOWN  4
 
 void player_update_motion(const input_actions_t *actions);
+bool is_wall_tile(int16_t world_x, int16_t world_y);
+void get_dir_offset(int8_t dir, int8_t *dx, int8_t *dy);
+bool can_step_dir(int16_t world_x, int16_t world_y, int8_t dir);
 
 #endif // PLAYER_H

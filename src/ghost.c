@@ -25,6 +25,137 @@ static uint8_t s_current_exit_idx = 0;
 static uint16_t s_exit_delay_timer = 0;
 static bool s_game_motion_started = false;
 
+static int8_t get_opposite_dir(int8_t dir) {
+    switch (dir) {
+        case DIR_RIGHT: return DIR_LEFT;
+        case DIR_LEFT:  return DIR_RIGHT;
+        case DIR_UP:    return DIR_DOWN;
+        case DIR_DOWN:  return DIR_UP;
+        default:        return DIR_NONE;
+    }
+}
+
+static void compute_ghost_target_tile(int ghost_index, int16_t *target_tx, int16_t *target_ty) {
+    int16_t pac_tx = (int16_t)(player.world_px / MAZE_TILES_SIZE_PX);
+    int16_t pac_ty = (int16_t)(player.world_py / MAZE_TILES_SIZE_PX);
+
+    int8_t pac_dx, pac_dy;
+    get_dir_offset(player.dir, &pac_dx, &pac_dy);
+
+    switch (ghost_index) {
+        case 0: // Blinky (Red): Direct Target -> Pac-Man's exact tile
+            *target_tx = pac_tx;
+            *target_ty = pac_ty;
+            break;
+
+        case 1: // Cyan (Inky): Vector target using Blinky's position and 2 tiles ahead of Pac-Man
+            {
+                int16_t blinky_tx = (int16_t)(ghosts[0].world_px / MAZE_TILES_SIZE_PX);
+                int16_t blinky_ty = (int16_t)(ghosts[0].world_py / MAZE_TILES_SIZE_PX);
+
+                int16_t pivot_x = pac_tx + (2 * pac_dx);
+                int16_t pivot_y = pac_ty + (2 * pac_dy);
+
+                *target_tx = pivot_x + (pivot_x - blinky_tx);
+                *target_ty = pivot_y + (pivot_y - blinky_ty);
+            }
+            break;
+
+        case 2: // Pinky (Pink): 4 tiles ahead of Pac-Man
+            *target_tx = pac_tx + (4 * pac_dx);
+            *target_ty = pac_ty + (4 * pac_dy);
+            break;
+
+        case 3: // Clyde (Orange): Direct target if distance > 8 tiles; home corner (0, 27) if distance <= 8
+            {
+                int16_t clyde_tx = (int16_t)(ghosts[3].world_px / MAZE_TILES_SIZE_PX);
+                int16_t clyde_ty = (int16_t)(ghosts[3].world_py / MAZE_TILES_SIZE_PX);
+
+                int32_t dx = (int32_t)(clyde_tx - pac_tx);
+                int32_t dy = (int32_t)(clyde_ty - pac_ty);
+                int32_t dist_sq = (dx * dx) + (dy * dy);
+
+                if (dist_sq > (8 * 8)) {
+                    *target_tx = pac_tx;
+                    *target_ty = pac_ty;
+                } else {
+                    // Target home corner: bottom-left tile (0, 27)
+                    *target_tx = 0;
+                    *target_ty = 27;
+                }
+            }
+            break;
+    }
+}
+
+static void update_ghost_outside_movement(int ghost_index) {
+    ghost_struct *g = &ghosts[ghost_index];
+
+    // Move 1px per frame along current direction
+    int8_t dx, dy;
+    get_dir_offset(g->dir, &dx, &dy);
+    g->world_px += dx;
+    g->world_py += dy;
+
+    // Handle horizontal tunnel wrapping
+    if (g->world_px < 0) g->world_px += WORLD_WIDTH;
+    else if (g->world_px >= WORLD_WIDTH) g->world_px -= WORLD_WIDTH;
+
+    // Handle vertical tunnel wrapping (using drawn screen Y: world_py + VISUAL_Y_OFFSET)
+    int16_t drawn_y = g->world_py - 3;
+    if (g->dir == DIR_DOWN && (drawn_y + SPRITE_SIZE_PX) >= 216) {
+        g->world_py -= 184; // Moving down: bottom of drawn sprite hits >= 216 -> shift up
+    } else if (g->dir == DIR_UP && drawn_y <= 28) {
+        g->world_py += 184; // Moving up: top of drawn sprite hits <= 28 -> shift down
+    }
+
+    // Evaluate turn decision at 8px grid intersections
+    bool at_intersection = (g->world_px % MAZE_TILES_SIZE_PX == 0) &&
+                           (g->world_py % MAZE_TILES_SIZE_PX == 0);
+
+    if (at_intersection) {
+        int16_t cur_tx = (int16_t)(g->world_px / MAZE_TILES_SIZE_PX);
+        int16_t cur_ty = (int16_t)(g->world_py / MAZE_TILES_SIZE_PX);
+
+        int16_t target_tx, target_ty;
+        compute_ghost_target_tile(ghost_index, &target_tx, &target_ty);
+
+        int8_t opposite_dir = get_opposite_dir(g->dir);
+        int8_t best_dir = g->dir;
+        int32_t min_dist_sq = 0x7FFFFFFF;
+
+        // Arcade direction choice priority in case of tie: UP (3), LEFT (1), DOWN (4), RIGHT (2)
+        static const int8_t EVAL_DIRS[4] = { DIR_UP, DIR_LEFT, DIR_DOWN, DIR_RIGHT };
+
+        for (uint8_t d = 0; d < 4; d++) {
+            int8_t test_dir = EVAL_DIRS[d];
+
+            // 180-degree turns prohibited
+            if (test_dir == opposite_dir) continue;
+
+            // Check if step in test direction is valid (not a wall)
+            if (can_step_dir(g->world_px, g->world_py, test_dir)) {
+                int8_t t_dx, t_dy;
+                get_dir_offset(test_dir, &t_dx, &t_dy);
+
+                int16_t next_tx = cur_tx + t_dx;
+                int16_t next_ty = cur_ty + t_dy;
+
+                int32_t diff_x = (int32_t)(next_tx - target_tx);
+                int32_t diff_y = (int32_t)(next_ty - target_ty);
+                int32_t dist_sq = (diff_x * diff_x) + (diff_y * diff_y);
+
+                if (dist_sq < min_dist_sq) {
+                    min_dist_sq = dist_sq;
+                    best_dir = test_dir;
+                }
+            }
+        }
+
+        g->dir = best_dir;
+    }
+}
+
 void ghost_update_motion(void) {
     static uint8_t anim_timer = 0;
     static uint8_t anim_cell = 0;
@@ -123,6 +254,9 @@ void ghost_update_motion(void) {
                 s_current_exit_idx++;
                 s_exit_delay_timer = 0;
             }
+        }
+        else if (g->state == GHOST_STATE_OUTSIDE) {
+            update_ghost_outside_movement(i);
         }
 
         // --- 3. Sprite Frame Selection ---
