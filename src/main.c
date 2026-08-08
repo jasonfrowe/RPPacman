@@ -44,24 +44,29 @@ int main(void)
 
     // Main loop
     while (true) {
-        // 1. SYNC
-        if (RIA.vsync == vsync_last) continue;
-        vsync_last = RIA.vsync;
-        frame++;
-        if (frame >= 60) frame = 0;
-
-        // 2. INPUT
+        // 1. INPUT
         input_poll(&actions);
 
-        // 3. Update Player
+        // 2. Update Player
         player_update_motion(&actions);
         ghost_update_motion();
         prize_update_motion();
         update_maze_munchers_animation();
 
-        // 4. Update animation palettes
+        // 3. Update animation palettes
         tile_mode2_palette_update(frame);
 
+        // 4. SYNC (Wait for VSYNC)
+        // Spin here until the hardware vsync register changes
+        while (RIA.vsync == vsync_last) {
+            // Do nothing, just wait
+        }
+        
+        // Update our tracker and frame counter
+        vsync_last = RIA.vsync;
+        
+        frame++;
+        if (frame >= 60) frame = 0;
     }
 
     return 0;

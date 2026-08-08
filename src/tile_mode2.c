@@ -96,8 +96,8 @@ void tile_mode2_text_map_init(void) {
     // Mode 2 args: MODE, OPTIONS, CONFIG, PLANE, BEGIN, END
     // OPTIONS: bit3=1 (16x16 tiles), bit[2:0]=2 (8-bit color index) 
     // bit[4:7]=1000 (trim 8 pixels x) bit[8:11]=0000 (no trim y ) => 0b0000 1000 1010 = 0x08A
-    // Plane 1 = background fill layer 
-    if (xreg_vga_mode(2, 0x08A, TEXT_MAP_CONFIG, 1, 0, 0) < 0) {
+    // Plane 1 = text overlay layer (top 28 scanlines only: BEGIN=0, END=28)
+    if (xreg_vga_mode(2, 0x08A, TEXT_MAP_CONFIG, 1, 0, 28) < 0) {
         return;
     }
 
@@ -121,24 +121,17 @@ void update_player_score_display(uint32_t score) {
     // 7-digit score at indices 9 through 15 on row 0 of TEXT_MAP_DATA
     // Digit to tile index mapping: 0 -> 46, 1 -> 37, 2 -> 38, ..., 9 -> 45
     static const uint8_t digit_tile_map[10] = {
-        46, // '0'
-        37, // '1'
-        38, // '2'
-        39, // '3'
-        40, // '4'
-        41, // '5'
-        42, // '6'
-        43, // '7'
-        44, // '8'
-        45  // '9'
+        46, 37, 38, 39, 40, 41, 42, 43, 44, 45
     };
 
     uint8_t digits[7];
-    uint32_t temp = score;
+    uint32_t val = score;
 
     for (int8_t i = 6; i >= 0; i--) {
-        digits[i] = digit_tile_map[temp % 10];
-        temp /= 10;
+        uint32_t next_val = val / 10;
+        uint8_t rem = (uint8_t)(val - (next_val * 10));
+        digits[i] = digit_tile_map[rem];
+        val = next_val;
     }
 
     RIA.addr0 = TEXT_MAP_DATA + 9;

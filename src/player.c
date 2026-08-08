@@ -128,56 +128,47 @@ static void update_score_popups(void) {
 }
 
 static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
-    // Pickup bounding box aligned with Pac-Man's visual drawn position:
-    // Drawn top-left = (world_x + VISUAL_X_OFFSET, world_y + VISUAL_Y_OFFSET)
-    // 16x16 sprite visual center = (+7px .. +8px)
+    // Check center of visual sprite (drawn_x + 8, drawn_y + 8) => (world_x + 5, world_y + 5)
+    int16_t check_x = world_x + 5;
+    int16_t check_y = world_y + 5;
+
+    if (check_x < 0) check_x += WORLD_WIDTH;
+    else if (check_x >= WORLD_WIDTH) check_x -= WORLD_WIDTH;
+    if (check_y < 0) check_y += WORLD_HEIGHT;
+    else if (check_y >= WORLD_HEIGHT) check_y -= WORLD_HEIGHT;
+
+    // Use fast 16-bit shift instead of 32-bit division (/ 8 -> >> 3)
+    uint16_t tile_x = (uint16_t)check_x >> 3;
+    uint16_t tile_y = (uint16_t)check_y >> 3;
+
+    if (tile_x >= MAZE_MAP_WIDTH) tile_x %= MAZE_MAP_WIDTH;
+    if (tile_y >= MAZE_MAP_HEIGHT) tile_y %= MAZE_MAP_HEIGHT;
+
+    uint16_t offset = tile_y * MAZE_MAP_WIDTH + tile_x;
+
+    RIA.addr0 = MAZE_MAP_DATA + offset;
+    RIA.step0 = 1;
+    uint8_t tile_index = RIA.rw0;
+
+    // Check if tile is a dot (116) or power pellet (117)
+    if (tile_index == 116 || tile_index == 117) {
+        uint32_t dot_pts = get_current_dot_value(player.pellets_eaten);
+        player.score += dot_pts;
+        player.pellets_eaten++;
+
+        update_player_score_display(player.score);
+
+        uint8_t score_tile = get_score_tile_index(dot_pts);
+        push_score_popup(tile_x, tile_y, score_tile);
+
+        // Check if clearing this pellet triggered side prize spawning
+        update_side_pellets_status();
+    }
+
+    // Check if Pacman is consuming an active prize using visual drawn coordinates
     int16_t drawn_x = world_x + VISUAL_X_OFFSET;
     int16_t drawn_y = world_y + VISUAL_Y_OFFSET;
-
-    int16_t check_points_x[2] = { drawn_x + 7, drawn_x + 8 };
-    int16_t check_points_y[2] = { drawn_y + 7, drawn_y + 8 };
-
-    for (uint8_t ix = 0; ix < 2; ix++) {
-        for (uint8_t iy = 0; iy < 2; iy++) {
-            int16_t check_x = check_points_x[ix];
-            int16_t check_y = check_points_y[iy];
-
-            while (check_x < 0) check_x += WORLD_WIDTH;
-            while (check_x >= WORLD_WIDTH) check_x -= WORLD_WIDTH;
-            while (check_y < 0) check_y += WORLD_HEIGHT;
-            while (check_y >= WORLD_HEIGHT) check_y -= WORLD_HEIGHT;
-
-            uint16_t tile_x = (uint16_t)(check_x / MAZE_TILES_SIZE_PX);
-            uint16_t tile_y = (uint16_t)(check_y / MAZE_TILES_SIZE_PX);
-
-            if (tile_x >= MAZE_MAP_WIDTH) tile_x %= MAZE_MAP_WIDTH;
-            if (tile_y >= MAZE_MAP_HEIGHT) tile_y %= MAZE_MAP_HEIGHT;
-
-            uint16_t offset = tile_y * MAZE_MAP_WIDTH + tile_x;
-
-            RIA.addr0 = MAZE_MAP_DATA + offset;
-            RIA.step0 = 1;
-            uint8_t tile_index = RIA.rw0;
-
-            // Check if tile is a dot (116) or power pellet (117)
-            if (tile_index == 116 || tile_index == 117) {
-                uint32_t dot_pts = get_current_dot_value(player.pellets_eaten);
-                player.score += dot_pts;
-                player.pellets_eaten++;
-
-                update_player_score_display(player.score);
-
-                uint8_t score_tile = get_score_tile_index(dot_pts);
-                push_score_popup(tile_x, tile_y, score_tile);
-
-                // Check if clearing this pellet triggered side prize spawning
-                update_side_pellets_status();
-            }
-
-            // Check if Pacman is consuming an active prize using visual drawn coordinates
-            check_and_eat_prize(drawn_x, drawn_y);
-        }
-    }
+    check_and_eat_prize(drawn_x, drawn_y);
 }
 
 // 8.8 Fixed-Point Speed Lookup Table across 22 Prize Levels (Cherry to Crown)
@@ -218,15 +209,32 @@ static uint8_t get_speed_level_index(void) {
 
 void player_update_motion(const input_actions_t *actions) {
 
-    // 1. Buffer user direction input
-    if (actions->right) {
-        queued_dir = DIR_RIGHT;
-    } else if (actions->left) {
-        queued_dir = DIR_LEFT;
-    } else if (actions->down) {
-        queued_dir = DIR_DOWN;
-    } else if (actions->up) {
-        queued_dir = DIR_UP;
+    // 1. Buffer user direction input (support diagonal D-pad input)
+    // If holding a diagonal (e.g. up + right while moving right), prioritize the perpendicular turn direction (up).
+    int8_t new_buffered_dir = DIR_NONE;
+
+    if (player.dir == DIR_RIGHT || player.dir == DIR_LEFT) {
+        // Currently moving horizontally: prioritize vertical inputs if held
+        if (actions->up)        new_buffered_dir = DIR_UP;
+        else if (actions->down) new_buffered_dir = DIR_DOWN;
+        else if (actions->right) new_buffered_dir = DIR_RIGHT;
+        else if (actions->left)  new_buffered_dir = DIR_LEFT;
+    } else if (player.dir == DIR_UP || player.dir == DIR_DOWN) {
+        // Currently moving vertically: prioritize horizontal inputs if held
+        if (actions->right)     new_buffered_dir = DIR_RIGHT;
+        else if (actions->left)  new_buffered_dir = DIR_LEFT;
+        else if (actions->up)    new_buffered_dir = DIR_UP;
+        else if (actions->down)  new_buffered_dir = DIR_DOWN;
+    } else {
+        // Stationary: register any pressed D-pad direction
+        if (actions->up)         new_buffered_dir = DIR_UP;
+        else if (actions->down)  new_buffered_dir = DIR_DOWN;
+        else if (actions->right) new_buffered_dir = DIR_RIGHT;
+        else if (actions->left)  new_buffered_dir = DIR_LEFT;
+    }
+
+    if (new_buffered_dir != DIR_NONE) {
+        queued_dir = new_buffered_dir;
     }
 
     // 2. Process direction change
@@ -238,7 +246,7 @@ void player_update_motion(const input_actions_t *actions) {
             (player.dir == DIR_DOWN && queued_dir == DIR_UP)) {
             player.dir = queued_dir;
         } else {
-            // Turning or starting requires Pac-Man to be aligned on the 8px tile grid in both X and Y
+            // Turning requires Pac-Man to be at an 8px grid intersection
             bool at_intersection = (player.world_px % MAZE_TILES_SIZE_PX == 0) && 
                                    (player.world_py % MAZE_TILES_SIZE_PX == 0);
 
@@ -268,6 +276,21 @@ void player_update_motion(const input_actions_t *actions) {
         }
 
         for (int16_t step = 0; step < move_pixels; step++) {
+            // Check direction change at every 8px grid intersection on every 1px step
+            if (player.world_px % MAZE_TILES_SIZE_PX == 0 && player.world_py % MAZE_TILES_SIZE_PX == 0) {
+                if (queued_dir != DIR_NONE) {
+                    if ((player.dir == DIR_RIGHT && queued_dir == DIR_LEFT) ||
+                        (player.dir == DIR_LEFT && queued_dir == DIR_RIGHT) ||
+                        (player.dir == DIR_UP && queued_dir == DIR_DOWN) ||
+                        (player.dir == DIR_DOWN && queued_dir == DIR_UP)) {
+                        player.dir = queued_dir;
+                    } else if (can_step_dir(player.world_px, player.world_py, queued_dir)) {
+                        player.dir = queued_dir;
+                    }
+                }
+                get_dir_offset(player.dir, &dx, &dy);
+            }
+
             int16_t next_px = player.world_px + dx;
             int16_t next_py = player.world_py + dy;
 
@@ -348,9 +371,9 @@ void player_update_motion(const input_actions_t *actions) {
     int16_t drawn_y = player.world_py + VISUAL_Y_OFFSET;
 
     if (player.dir == DIR_DOWN && (drawn_y + SPRITE_SIZE_PX) >= 216) {
-        player.world_py -= 184; // Moving down: bottom of drawn sprite hits >= 216 -> shift up 200px
-    } else if (player.dir == DIR_UP && drawn_y < 24) {
-        player.world_py += 184; // Moving up: top of drawn sprite hits < 24 -> shift down 200px
+        player.world_py -= 184; // Moving down: bottom of drawn sprite hits >= 216 -> shift up
+    } else if (player.dir == DIR_UP && drawn_y <= 28) {
+        player.world_py += 184; // Moving up: top of drawn sprite hits <= 28 -> shift down
     }
 
     // Screen Y tracks world Y with visual offset

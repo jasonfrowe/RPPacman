@@ -32,13 +32,10 @@ typedef struct {
     int8_t current_col_step; // 0..18
     uint8_t frame_timer;     // counts 0, 1 -> update column every 2 frames
     uint8_t anim_frame_idx;  // muncher sprite animation index
-
-    uint8_t wave_offsets[SIDE_MAP_COLS];     // current tile index offset for each column (0..7)
-    uint8_t wave_hold_timers[SIDE_MAP_COLS]; // frame countdown before decrementing offset (16 frames)
-    bool column_revealed[SIDE_MAP_COLS];     // whether column tile values have been copied
+    uint16_t elapsed_frame;  // total elapsed frames for this transition
 } maze_transition_t;
 
-static maze_transition_t s_transition;
+static maze_transition_t s_transitions[2]; // Index 0: Left side, Index 1: Right side
 
 static void copy_single_column_with_offset(uint8_t level, uint16_t tx, uint8_t offset_val) {
     uint16_t src_map_base = ALL_MAZE_MAPS_DATA + ((uint16_t)level * (MAZE_MAP_WIDTH * MAZE_MAP_HEIGHT));
@@ -63,24 +60,22 @@ static void copy_single_column_with_offset(uint8_t level, uint16_t tx, uint8_t o
 }
 
 static void trigger_maze_transition(uint8_t target_level, bool is_right_side) {
-    s_transition.active = true;
-    s_transition.munchers_active = true;
-    s_transition.is_right_side = is_right_side;
-    s_transition.target_level = target_level;
-    s_transition.current_col_step = 0;
-    s_transition.frame_timer = 0;
-    s_transition.anim_frame_idx = 0;
-
-    for (uint8_t i = 0; i < SIDE_MAP_COLS; i++) {
-        s_transition.wave_offsets[i] = 0;
-        s_transition.wave_hold_timers[i] = 0;
-        s_transition.column_revealed[i] = false;
-    }
+    uint8_t idx = is_right_side ? 1 : 0;
+    s_transitions[idx].active = true;
+    s_transitions[idx].munchers_active = true;
+    s_transitions[idx].is_right_side = is_right_side;
+    s_transitions[idx].target_level = target_level;
+    s_transitions[idx].current_col_step = 0;
+    s_transitions[idx].frame_timer = 0;
+    s_transitions[idx].anim_frame_idx = 0;
+    s_transitions[idx].elapsed_frame = 0;
 }
 
 void update_maze_munchers_animation(void) {
-    if (!s_transition.active) {
-        // Ensure munchers are parked off-screen when inactive
+    bool any_active = s_transitions[0].active || s_transitions[1].active;
+
+    if (!any_active) {
+        // Ensure munchers are parked off-screen when no transitions are active
         static bool s_munchers_were_active = false;
         if (s_munchers_were_active) {
             s_munchers_were_active = false;
@@ -95,55 +90,35 @@ void update_maze_munchers_animation(void) {
     }
 
     static bool s_munchers_were_active = false;
+    s_munchers_were_active = true;
 
-    // --- 1. MUNCHER SPRITES & COLUMN REVEAL (Lags 2 columns behind munchers) ---
-    if (s_transition.munchers_active) {
-        s_munchers_were_active = true;
+    // Process both left side (0) and right side (1) transitions independently
+    for (uint8_t s = 0; s < 2; s++) {
+        if (!s_transitions[s].active) continue;
 
-        // Current column being swept by munchers (0..18)
-        int8_t muncher_step = s_transition.current_col_step;
+        // --- 1. MUNCHER SPRITES (Advance 1 tile column every 2 frames) ---
+        if (s_transitions[s].munchers_active) {
+            int8_t muncher_step = s_transitions[s].current_col_step;
 
-        // Tile replacement lags 2 columns behind munchers
-        int8_t wave_reveal_step = muncher_step - 2;
-        if (wave_reveal_step >= 0 && wave_reveal_step < SIDE_MAP_COLS) {
-            if (!s_transition.column_revealed[wave_reveal_step]) {
-                s_transition.column_revealed[wave_reveal_step] = true;
-                s_transition.wave_offsets[wave_reveal_step] = 7; // Initial +7 index offset
-                s_transition.wave_hold_timers[wave_reveal_step] = 16; // 16 frames per decrement
+            if (muncher_step >= 0 && muncher_step < SIDE_MAP_COLS) {
+                uint16_t current_muncher_tx = s_transitions[s].is_right_side ? (28 + muncher_step) : (18 - muncher_step);
+                int16_t world_x_px = (int16_t)(current_muncher_tx * MAZE_TILES_SIZE_PX);
+                int16_t screen_x_px = world_x_px + maze_dx;
+                int16_t sub_offset_x = (s_transitions[s].frame_timer == 1) ? (s_transitions[s].is_right_side ? 4 : -4) : 0;
+                int16_t muncher_x = screen_x_px + sub_offset_x;
 
-                uint16_t tx = s_transition.is_right_side ? (28 + wave_reveal_step) : (18 - wave_reveal_step);
-                copy_single_column_with_offset(s_transition.target_level, tx, 7);
-            }
-        }
+                uint8_t base_sprite_frame = s_transitions[s].is_right_side ? 90 : 98;
+                uint8_t muncher_sprite_frame = base_sprite_frame + (s_transitions[s].anim_frame_idx % 8);
 
-        // Calculate muncher position and draw sprites
-        uint16_t current_muncher_tx = s_transition.is_right_side ? (28 + muncher_step) : (18 - muncher_step);
-        int16_t world_x_px = (int16_t)(current_muncher_tx * MAZE_TILES_SIZE_PX);
-        int16_t screen_x_px = world_x_px + maze_dx;
-        int16_t sub_offset_x = (s_transition.frame_timer == 1) ? (s_transition.is_right_side ? 4 : -4) : 0;
-        int16_t muncher_x = screen_x_px + sub_offset_x;
-
-        uint8_t base_sprite_frame = s_transition.is_right_side ? 90 : 98;
-        uint8_t muncher_sprite_frame = base_sprite_frame + (s_transition.anim_frame_idx % 8);
-
-        for (int i = 0; i < NMAZE_MUNCHERS; i++) {
-            int16_t muncher_y = 28 + (i * 16);
-            unsigned muncher_config = MAZE_MUNCHERS_CONFIG + (i * sizeof(vga_mode5_sprite_t));
-            xram0_struct_set(muncher_config, vga_mode5_sprite_t, x_pos_px, muncher_x);
-            xram0_struct_set(muncher_config, vga_mode5_sprite_t, y_pos_px, muncher_y);
-            xram0_struct_set(muncher_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (muncher_sprite_frame * SPRITE_FRAME_SIZE)));
-        }
-
-        s_transition.anim_frame_idx++;
-        s_transition.frame_timer++;
-        if (s_transition.frame_timer >= 2) {
-            s_transition.frame_timer = 0;
-            s_transition.current_col_step++;
-
-            if (s_transition.current_col_step > (SIDE_MAP_COLS + 2)) {
-                s_transition.munchers_active = false;
-
-                // Park muncher sprites off-screen
+                for (int i = 0; i < NMAZE_MUNCHERS; i++) {
+                    int16_t muncher_y = 28 + (i * 16);
+                    unsigned muncher_config = MAZE_MUNCHERS_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+                    xram0_struct_set(muncher_config, vga_mode5_sprite_t, x_pos_px, muncher_x);
+                    xram0_struct_set(muncher_config, vga_mode5_sprite_t, y_pos_px, muncher_y);
+                    xram0_struct_set(muncher_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (muncher_sprite_frame * SPRITE_FRAME_SIZE)));
+                }
+            } else {
+                // Muncher sweep finished: park sprites off-screen
                 for (int i = 0; i < NMAZE_MUNCHERS; i++) {
                     unsigned muncher_config = MAZE_MUNCHERS_CONFIG + (i * sizeof(vga_mode5_sprite_t));
                     xram0_struct_set(muncher_config, vga_mode5_sprite_t, x_pos_px, -32);
@@ -151,34 +126,53 @@ void update_maze_munchers_animation(void) {
                     xram0_struct_set(muncher_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
                 }
             }
-        }
-    }
 
-    // --- 2. WAVE OFFSET DECAY ANIMATION (Decrements by 1 every 16 frames down to 0) ---
-    bool any_wave_active = false;
-    for (uint8_t step = 0; step < SIDE_MAP_COLS; step++) {
-        if (!s_transition.column_revealed[step]) continue;
-
-        if (s_transition.wave_offsets[step] > 0) {
-            any_wave_active = true;
-
-            if (s_transition.wave_hold_timers[step] > 0) {
-                s_transition.wave_hold_timers[step]--;
-            }
-
-            if (s_transition.wave_hold_timers[step] == 0) {
-                s_transition.wave_offsets[step]--;
-                s_transition.wave_hold_timers[step] = 16; // Reset 16 frame timer for next decrement
-
-                uint16_t tx = s_transition.is_right_side ? (28 + step) : (18 - step);
-                copy_single_column_with_offset(s_transition.target_level, tx, s_transition.wave_offsets[step]);
+            s_transitions[s].anim_frame_idx++;
+            s_transitions[s].frame_timer++;
+            if (s_transitions[s].frame_timer >= 2) {
+                s_transitions[s].frame_timer = 0;
+                s_transitions[s].current_col_step++;
+                if (s_transitions[s].current_col_step >= SIDE_MAP_COLS) {
+                    s_transitions[s].munchers_active = false;
+                }
             }
         }
-    }
 
-    // End full transition when munchers and all column waves finish
-    if (!s_transition.munchers_active && !any_wave_active) {
-        s_transition.active = false;
+        // --- 2. DETERMINISTIC WAVE TRANSITION FOR THIS SIDE ---
+        uint16_t cur_frame = s_transitions[s].elapsed_frame;
+        s_transitions[s].elapsed_frame++;
+
+        bool side_has_active_columns = false;
+
+        for (uint8_t col = 0; col < SIDE_MAP_COLS; col++) {
+            // Column reveal lags 2 columns behind munchers (revealed at frame 2 * col)
+            uint16_t reveal_frame = (uint16_t)col * 2;
+
+            if (cur_frame >= reveal_frame) {
+                uint16_t elapsed = cur_frame - reveal_frame;
+
+                // Offset starts at 7 and decrements by 1 every 16 frames (steps 0..7)
+                uint8_t step = (uint8_t)(elapsed / 16);
+                uint8_t offset_val = (step >= 7) ? 0 : (7 - step);
+
+                if (offset_val > 0) {
+                    side_has_active_columns = true;
+                }
+
+                // Update column tiles only on the exact frame the offset changes
+                if (elapsed == 0 || (elapsed % 16 == 0 && step <= 7)) {
+                    uint16_t tx = s_transitions[s].is_right_side ? (28 + col) : (18 - col);
+                    copy_single_column_with_offset(s_transitions[s].target_level, tx, offset_val);
+                }
+            } else {
+                side_has_active_columns = true;
+            }
+        }
+
+        // End transition for this side when its munchers AND all 19 column waves complete
+        if (!s_transitions[s].munchers_active && !side_has_active_columns) {
+            s_transitions[s].active = false;
+        }
     }
 }
 
