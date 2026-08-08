@@ -8,14 +8,15 @@
 unsigned PLAYER_CONFIG;
 unsigned GHOST_CONFIG;
 unsigned PRIZE_CONFIG;
+unsigned PRIZE_SPARKLE_CONFIG;
 
 
 ghost_struct ghosts[NGHOSTS];
 player_struct player;
 
 prize_struct prizes[NPRIZES] = {
-    {0, 0, 28 * MAZE_TILES_SIZE_PX - 5, 15 * MAZE_TILES_SIZE_PX - 3, 48}, // Left clear prize -> tile (28, 15)
-    {0, 0, 18 * MAZE_TILES_SIZE_PX - 5, 15 * MAZE_TILES_SIZE_PX - 3, 48}  // Right clear prize -> tile (18, 15)
+    {0, 0, 28 * MAZE_TILES_SIZE_PX - 5, 15 * MAZE_TILES_SIZE_PX - 3, 48, -32}, // Left clear prize -> tile (28, 15)
+    {0, 0, 18 * MAZE_TILES_SIZE_PX - 5, 15 * MAZE_TILES_SIZE_PX - 3, 48, -32}  // Right clear prize -> tile (18, 15)
 };
 
 void sprite_mode5_init(void) {
@@ -47,8 +48,23 @@ void sprite_mode5_init(void) {
         xram0_struct_set(current_prize_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (prizes[i].frame * SPRITE_FRAME_SIZE)));
         xram0_struct_set(current_prize_config, vga_mode5_sprite_t, palette_ptr, PLAYER_PALETTE_ADDR);
     }
+
+    PRIZE_SPARKLE_CONFIG = PRIZE_CONFIG + NPRIZES * sizeof(vga_mode5_sprite_t); // After prize config
+
+    for (int i = 0; i < NPRIZES; i++) {
+        // Calculate the base address for the current prize sparkle once
+        uint16_t current_prize_sparkle_config = PRIZE_SPARKLE_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+
+        // Set X and Y positions in XRAM
+        xram0_struct_set(current_prize_sparkle_config, vga_mode5_sprite_t, x_pos_px, (prizes[i].x_sparkle_px));
+        xram0_struct_set(current_prize_sparkle_config, vga_mode5_sprite_t, y_pos_px, (prizes[i].y_sparkle_px));
+        
+        // Set the sprite pointer to the first frame of the sparkle sprite
+        xram0_struct_set(current_prize_sparkle_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE))); // Sparkle frame index 48
+        xram0_struct_set(current_prize_sparkle_config, vga_mode5_sprite_t, palette_ptr, PLAYER_PALETTE_ADDR);
+    }
     
-    GHOST_CONFIG = PRIZE_CONFIG + NPRIZES * sizeof(vga_mode5_sprite_t); // After player config
+    GHOST_CONFIG = PRIZE_SPARKLE_CONFIG + NPRIZES * sizeof(vga_mode5_sprite_t); // After prize sparkle config
 
     for (int i = 0; i < NGHOSTS; i++) {
         // Calculate the base address for the current ghost once
@@ -80,7 +96,7 @@ void sprite_mode5_init(void) {
     }
 
     // Mode 5 args: MODE, OPTIONS, CONFIG, LENGTH, PLANE, BEGIN, END
-    if (xreg_vga_mode(5, 0x0A, PRIZE_CONFIG, 1 + NGHOSTS + NPRIZES, 1, 0, 0) < 0) {
+    if (xreg_vga_mode(5, 0x0A, PRIZE_CONFIG, 1 + NGHOSTS + NPRIZES + NPRIZES, 1, 0, 0) < 0) {
         return;
     }
 

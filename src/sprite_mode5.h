@@ -41,6 +41,8 @@ typedef struct {
     int16_t world_px;
     int16_t world_py;
     int8_t frame;
+    int16_t x_sparkle_px; // position of sparkle effect animation
+    int16_t y_sparkle_px;
 } prize_struct;
 
 extern prize_struct prizes[NPRIZES];

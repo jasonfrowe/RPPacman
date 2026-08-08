@@ -66,5 +66,6 @@ extern unsigned PLAYER_CONFIG;                      // Player configuration
 extern unsigned GHOST_CONFIG;                       // Ghost configuration
 extern unsigned TEXT_MAP_CONFIG;                    // Text map configuration
 extern unsigned PRIZE_CONFIG;                       // Prize configuration
+extern unsigned PRIZE_SPARKLE_CONFIG;                // Prize sparkle configuration
 
 #endif // CONSTANTS_H
