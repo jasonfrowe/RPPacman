@@ -272,14 +272,17 @@ void player_update_motion(const input_actions_t *actions) {
         player.world_px -= WORLD_WIDTH;
     }
 
-    if (player.world_py < 0) {
-        player.world_py += WORLD_HEIGHT;
-    } else if (player.world_py >= WORLD_HEIGHT) {
-        player.world_py -= WORLD_HEIGHT;
-    }
-
 #define VISUAL_X_OFFSET (-3) // Visual horizontal draw offset (-3px)
 #define VISUAL_Y_OFFSET (-3) // Visual vertical draw offset (-3px)
+
+    // Vertical tunnel wrapping using Pac-Man's drawn screen position (world_py + VISUAL_Y_OFFSET)
+    int16_t drawn_y = player.world_py + VISUAL_Y_OFFSET;
+
+    if (player.dir == DIR_DOWN && (drawn_y + SPRITE_SIZE_PX) >= 216) {
+        player.world_py -= 184; // Moving down: bottom of drawn sprite hits >= 216 -> shift up 200px
+    } else if (player.dir == DIR_UP && drawn_y < 24) {
+        player.world_py += 184; // Moving up: top of drawn sprite hits < 24 -> shift down 200px
+    }
 
     // Screen Y tracks world Y with visual offset
     player.y_pos_px = player.world_py + VISUAL_Y_OFFSET;
