@@ -15,6 +15,8 @@ typedef struct {
     int16_t min_home_py; // Top Y bound in home box
     int16_t max_home_py; // Bottom Y bound in home box
     uint8_t state;       // 0: HOME_BOUNCE, 1: MOVING_TO_SLOT, 2: EXITING_HOUSE, 3: OUTSIDE
+    uint8_t mode;        // 0: CHASE, 1: FRIGHTENED, 2: EATEN
+    int8_t queue_slot;   // 0: (23,14), 1: (23,16), 2: (21,15), 3: (25,15), -1: outside/none
     uint16_t sub_py;     // 8.8 fixed-point subpixel Y for smooth exit speed
     uint16_t sub_px;     // 8.8 fixed-point subpixel X for smooth slot movement
 } ghost_struct;

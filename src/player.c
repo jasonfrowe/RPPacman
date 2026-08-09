@@ -6,6 +6,7 @@
 #include "sprite_mode5.h"
 #include "tile_mode2.h"
 #include "prizes.h"
+#include "ghost.h"
 
 #define VISUAL_X_OFFSET (-3) // Visual horizontal draw offset (-3px)
 #define VISUAL_Y_OFFSET (-3) // Visual vertical draw offset (-3px)
@@ -74,7 +75,7 @@ static uint32_t get_current_dot_value(uint16_t dots_eaten) {
     return 50;
 }
 
-static void push_score_popup(uint16_t tile_x, uint16_t tile_y, uint8_t score_tile) {
+void push_score_popup(uint16_t tile_x, uint16_t tile_y, uint8_t score_tile) {
     // If popups queue is full (10 items), expire the oldest entry immediately to blank (tile 0)
     if (s_popup_count >= MAX_SCORE_POPUPS) {
         uint16_t old_offset = s_score_popups[0].tile_y * MAZE_MAP_WIDTH + s_score_popups[0].tile_x;
@@ -152,6 +153,11 @@ static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
 
     // Check if tile is a dot (116) or power pellet (117)
     if (tile_index == 116 || tile_index == 117) {
+        // Clear pellet tile in XRAM map memory to 0 (blank tile)
+        RIA.addr0 = MAZE_MAP_DATA + offset;
+        RIA.step0 = 1;
+        RIA.rw0 = 0;
+
         uint32_t dot_pts = get_current_dot_value(player.pellets_eaten);
         player.score += dot_pts;
         player.pellets_eaten++;
@@ -160,6 +166,11 @@ static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
 
         uint8_t score_tile = get_score_tile_index(dot_pts);
         push_score_popup(tile_x, tile_y, score_tile);
+
+        // If a Power Pellet / Super Pellet (117) was eaten, trigger Frightened mode
+        if (tile_index == 117) {
+            trigger_power_pellet_frightened();
+        }
 
         // Update side pellet counter and check if clearing this pellet triggered prize spawning
         on_pellet_eaten(tile_x);

@@ -116,7 +116,7 @@ void sprite_mode5_init(void) {
 
 // Call this before calling sprite_mode5_init()
 void init_ghost_data(void) {
-    // Red (Blinky): tile (23, 14) => world (184, 112) [Already at exit slot]
+    // Red (Blinky - Ghost 0): tile (23, 14) => world (184, 112) -> Queue Slot 0
     ghosts[0].world_px = 23 * MAZE_TILES_SIZE_PX; // 184
     ghosts[0].world_py = 14 * MAZE_TILES_SIZE_PX; // 112
     ghosts[0].x_pos_px = ghosts[0].world_px + maze_dx;
@@ -127,38 +127,44 @@ void init_ghost_data(void) {
     ghosts[0].min_home_py = 14 * MAZE_TILES_SIZE_PX;
     ghosts[0].max_home_py = 16 * MAZE_TILES_SIZE_PX;
     ghosts[0].state = 0; // GHOST_STATE_HOME_BOUNCE
+    ghosts[0].mode = 0;  // CHASE
+    ghosts[0].queue_slot = 0; // Slot 0: (23, 14)
     ghosts[0].sub_px = ghosts[0].world_px << 8;
     ghosts[0].sub_py = ghosts[0].world_py << 8;
 
-    // Cyan (Inky): tile (21, 15) => world (168, 120) [Inside left]
-    ghosts[1].world_px = 21 * MAZE_TILES_SIZE_PX; // 168
-    ghosts[1].world_py = 15 * MAZE_TILES_SIZE_PX; // 120
+    // Pink (Pinky - Ghost 1): tile (23, 16) => world (184, 128) -> Queue Slot 1
+    ghosts[1].world_px = 23 * MAZE_TILES_SIZE_PX; // 184
+    ghosts[1].world_py = 16 * MAZE_TILES_SIZE_PX; // 128
     ghosts[1].x_pos_px = ghosts[1].world_px + maze_dx;
     ghosts[1].y_pos_px = ghosts[1].world_py - 3;
-    ghosts[1].dir = 4; // DIR_DOWN
-    ghosts[1].frame = 26;
+    ghosts[1].dir = 3; // DIR_UP
+    ghosts[1].frame = 16;
     ghosts[1].in_house = true;
     ghosts[1].min_home_py = 14 * MAZE_TILES_SIZE_PX;
     ghosts[1].max_home_py = 16 * MAZE_TILES_SIZE_PX;
     ghosts[1].state = 0; // GHOST_STATE_HOME_BOUNCE
+    ghosts[1].mode = 0;  // CHASE
+    ghosts[1].queue_slot = 1; // Slot 1: (23, 16)
     ghosts[1].sub_px = ghosts[1].world_px << 8;
     ghosts[1].sub_py = ghosts[1].world_py << 8;
 
-    // Pink (Pinky): tile (23, 16) => world (184, 128) [Inside center bottom]
-    ghosts[2].world_px = 23 * MAZE_TILES_SIZE_PX; // 184
-    ghosts[2].world_py = 16 * MAZE_TILES_SIZE_PX; // 128
+    // Cyan (Inky - Ghost 2): tile (21, 15) => world (168, 120) -> Queue Slot 2
+    ghosts[2].world_px = 21 * MAZE_TILES_SIZE_PX; // 168
+    ghosts[2].world_py = 15 * MAZE_TILES_SIZE_PX; // 120
     ghosts[2].x_pos_px = ghosts[2].world_px + maze_dx;
     ghosts[2].y_pos_px = ghosts[2].world_py - 3;
-    ghosts[2].dir = 3; // DIR_UP
-    ghosts[2].frame = 16;
+    ghosts[2].dir = 4; // DIR_DOWN
+    ghosts[2].frame = 26;
     ghosts[2].in_house = true;
     ghosts[2].min_home_py = 14 * MAZE_TILES_SIZE_PX;
     ghosts[2].max_home_py = 16 * MAZE_TILES_SIZE_PX;
     ghosts[2].state = 0; // GHOST_STATE_HOME_BOUNCE
+    ghosts[2].mode = 0;  // CHASE
+    ghosts[2].queue_slot = 2; // Slot 2: (21, 15)
     ghosts[2].sub_px = ghosts[2].world_px << 8;
     ghosts[2].sub_py = ghosts[2].world_py << 8;
 
-    // Orange (Clyde): tile (25, 15) => world (200, 120) [Inside right]
+    // Orange (Clyde - Ghost 3): tile (25, 15) => world (200, 120) -> Queue Slot 3
     ghosts[3].world_px = 25 * MAZE_TILES_SIZE_PX; // 200
     ghosts[3].world_py = 15 * MAZE_TILES_SIZE_PX; // 120
     ghosts[3].x_pos_px = ghosts[3].world_px + maze_dx;
@@ -169,6 +175,8 @@ void init_ghost_data(void) {
     ghosts[3].min_home_py = 14 * MAZE_TILES_SIZE_PX;
     ghosts[3].max_home_py = 16 * MAZE_TILES_SIZE_PX;
     ghosts[3].state = 0; // GHOST_STATE_HOME_BOUNCE
+    ghosts[3].mode = 0;  // CHASE
+    ghosts[3].queue_slot = 3; // Slot 3: (25, 15)
     ghosts[3].sub_px = ghosts[3].world_px << 8;
     ghosts[3].sub_py = ghosts[3].world_py << 8;
 }
