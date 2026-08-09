@@ -23,16 +23,22 @@ static const uint8_t GHOST_BASE_FRAMES[NGHOSTS] = { 8, 16, 24, 32 };
 #define GHOST_MODE_FRIGHTENED   1
 #define GHOST_MODE_EATEN        2
 
-// 4 Queue Slot Positions inside/around home:
-// Slot 0: Tile (23, 14) => World (184, 112) [Exit/Top Slot]
-// Slot 1: Tile (23, 16) => World (184, 128) [Bottom Slot]
-// Slot 2: Tile (21, 15) => World (168, 120) [Left Wing Slot]
-// Slot 3: Tile (25, 15) => World (200, 120) [Right Wing Slot]
-static const int16_t SLOT_X[4] = { 23 * 8, 23 * 8, 21 * 8, 25 * 8 };
-static const int16_t SLOT_Y[4] = { 14 * 8, 16 * 8, 15 * 8, 15 * 8 };
+// Designated starting positions and bounce bounds per ghost:
+// Ghost 0 (Red / Blinky):   start (23, 14) -> X=184, Y=112..128
+// Ghost 1 (Pink / Pinky):   start (23, 16) -> X=184, Y=112..128
+// Ghost 2 (Cyan / Inky):    start (21, 15) -> X=168, Y=112..128
+// Ghost 3 (Orange / Clyde): start (25, 15) -> X=200, Y=112..128
+static const int16_t GHOST_HOME_X[4] = { 23 * 8, 23 * 8, 21 * 8, 25 * 8 };
+static const int16_t GHOST_MIN_Y[4]  = { 14 * 8, 14 * 8, 14 * 8, 14 * 8 };
+static const int16_t GHOST_MAX_Y[4]  = { 16 * 8, 16 * 8, 16 * 8, 16 * 8 };
 
-// Initial game start exit order: Red (0), Pink (1), Cyan (2), Orange (3)
+// Initial game exit order: 0 (Blinky), 1 (Pinky), 2 (Inky), 3 (Clyde)
 static const uint8_t INITIAL_EXIT_ORDER[4] = { 0, 1, 2, 3 };
+static uint8_t s_initial_exit_idx = 0;
+
+// FIFO queue array for eaten ghosts returning home (capacity 4)
+static int8_t s_fifo_queue[4] = { -1, -1, -1, -1 };
+static uint8_t s_fifo_count = 0;
 
 static uint16_t s_exit_delay_timer = 0;
 static bool s_game_motion_started = false;
@@ -42,10 +48,10 @@ static uint16_t s_frightened_timer = 0;
 static uint16_t s_frightened_max_duration = 0;
 static uint16_t s_ghosts_eaten_chain = 0; // Continuous combo counter across Power Pellets!
 
-// Level-scaled Power Pellet durations in 60 FPS frames (Cherry 6.0s -> Crown 1.0s)
+// Level-scaled Power Pellet total durations in 60 FPS frames (Level 0 Cherry: 600 frames / 10.0s -> Level 21 Crown: 240 frames / 4.0s)
 static const uint16_t FRIGHTENED_DURATION_TABLE[22] = {
-    360, 345, 330, 315, 300, 285, 270, 255, 240, 225,
-    210, 195, 180, 165, 150, 135, 120, 105,  90,  80,  70,  60
+    600, 583, 566, 549, 531, 514, 497, 480, 463, 446,
+    429, 411, 394, 377, 360, 343, 326, 309, 291, 274, 257, 240
 };
 
 static int8_t get_opposite_dir(int8_t dir) {
@@ -241,29 +247,28 @@ static void update_ghost_outside_movement(int ghost_index) {
             int16_t door_y = 12 * MAZE_TILES_SIZE_PX; // 96
 
             if (g->world_px == door_x && g->world_py == door_y) {
-                // Find highest priority free slot in home queue:
-                // Priority: Slot 0 (23,14), Slot 1 (23,16), Slot 2 (21,15), Slot 3 (25,15)
-                int target_slot = 0;
-                for (int s = 0; s < 4; s++) {
-                    bool occupied = false;
-                    for (int o = 0; o < NGHOSTS; o++) {
-                        if (o != ghost_index && ghosts[o].in_house && ghosts[o].queue_slot == s) {
-                            occupied = true;
-                            break;
-                        }
-                    }
-                    if (!occupied) {
-                        target_slot = s;
+                // Snap ghost back to row 16 (128px) at its designated X column, initial movement DIR_UP
+                g->world_px = GHOST_HOME_X[ghost_index];
+                g->world_py = GHOST_MAX_Y[ghost_index]; // Row 16 (128px)
+                g->sub_px = g->world_px << 8;
+                g->sub_py = g->world_py << 8;
+                g->bounce_dist_px = 0; // Reset 80px cooldown tracker (requires 80px bounce before next spawn)
+                g->in_house = true;
+                g->state = GHOST_STATE_HOME_BOUNCE;
+                g->dir = DIR_UP; // Initial movement UP
+                g->mode = GHOST_MODE_CHASE; // Reset mode to normal CHASE state
+
+                // Enqueue ghost into FIFO return queue if not already queued
+                bool already_queued = false;
+                for (uint8_t f = 0; f < s_fifo_count; f++) {
+                    if (s_fifo_queue[f] == ghost_index) {
+                        already_queued = true;
                         break;
                     }
                 }
-
-                g->in_house = true;
-                g->queue_slot = target_slot;
-                g->state = GHOST_STATE_MOVING_TO_SLOT;
-                g->dir = DIR_DOWN;
-                g->sub_px = g->world_px << 8;
-                g->sub_py = g->world_py << 8;
+                if (!already_queued && s_fifo_count < 4) {
+                    s_fifo_queue[s_fifo_count++] = ghost_index;
+                }
                 break;
             }
         }
@@ -298,9 +303,17 @@ static void update_ghost_outside_movement(int ghost_index) {
 
             static const int8_t EVAL_DIRS[4] = { DIR_UP, DIR_LEFT, DIR_DOWN, DIR_RIGHT };
 
+            // Check if ghost is in vertical tunnel regions (< 32px or > 215px drawn Y)
+            bool is_in_vertical_tunnel = (drawn_y < 32) || ((drawn_y + SPRITE_SIZE_PX) > 215);
+
             for (uint8_t d = 0; d < 4; d++) {
                 int8_t test_dir = EVAL_DIRS[d];
                 if (test_dir == opposite_dir) continue;
+
+                // Ignore left/right turn evaluation when in vertical tunnel
+                if (is_in_vertical_tunnel && (test_dir == DIR_LEFT || test_dir == DIR_RIGHT)) {
+                    continue;
+                }
 
                 if (can_step_dir(g->world_px, g->world_py, test_dir)) {
                     int8_t t_dx, t_dy;
@@ -339,7 +352,6 @@ void ghost_update_motion(void) {
     if (s_frightened_timer > 0) {
         s_frightened_timer--;
         if (s_frightened_timer == 0) {
-            // Frightened timer expired! Reset combo chain and return ghosts to CHASE mode
             s_ghosts_eaten_chain = 0;
             for (int i = 0; i < NGHOSTS; i++) {
                 if (ghosts[i].mode == GHOST_MODE_FRIGHTENED) {
@@ -350,42 +362,110 @@ void ghost_update_motion(void) {
     }
 
     // Start game motion when player first inputs a direction
-    if (!s_game_motion_started && player.dir != DIR_NONE) {
-        s_game_motion_started = true;
-        s_exit_delay_timer = 0;
+    if (!s_game_motion_started) {
+        if (player.dir != DIR_NONE) {
+            s_game_motion_started = true;
+            s_exit_delay_timer = 0;
+        } else {
+            // Ghosts remain completely stationary until Pac-Man begins moving!
+            return;
+        }
     }
 
     // Check collisions with active ghosts
     check_pacman_ghost_collisions();
 
-    // --- 1. Queue Promotion System ---
-    // Ghosts progress through queue slots: 3 (25,15) -> 2 (21,15) -> 1 (23,16) -> 0 (23,14)
-    // If a lower slot index is empty, a ghost in a higher slot index shifts toward it.
+    // --- 1. Update Ghost Positions per State ---
+    // Home bounce speed: 0.85x of Pac-Man's level base speed
+    uint8_t speed_lvl = get_speed_level_index();
+    uint16_t home_speed_fp = (SPEED_TABLE[speed_lvl] * 85) / 100;
+
     for (int i = 0; i < NGHOSTS; i++) {
         ghost_struct *g = &ghosts[i];
-        if (g->in_house && g->state == GHOST_STATE_HOME_BOUNCE) {
-            if (g->queue_slot > 0) {
-                int target_slot = g->queue_slot - 1;
-                // Check if target_slot is free
-                bool occupied = false;
-                for (int o = 0; o < NGHOSTS; o++) {
-                    if (o != i && ghosts[o].in_house && ghosts[o].queue_slot == target_slot) {
-                        occupied = true;
+
+        if (g->state == GHOST_STATE_HOME_BOUNCE) {
+            // Bounce vertically between designated min_home_py (row 14) and max_home_py (row 16) at 0.85x speed
+            uint16_t move_px = 0;
+            if (g->dir == DIR_DOWN) {
+                g->sub_py += home_speed_fp;
+                move_px = g->sub_py >> 8;
+                g->sub_py &= 0x00FF;
+                for (uint16_t step = 0; step < move_px; step++) {
+                    g->world_py++;
+                    g->bounce_dist_px++;
+                    if (g->world_py >= g->max_home_py) {
+                        g->world_py = g->max_home_py;
+                        g->dir = DIR_UP;
                         break;
                     }
                 }
-                if (!occupied) {
-                    // Promote to lower slot index and move towards it
-                    g->queue_slot = target_slot;
-                    g->state = GHOST_STATE_MOVING_TO_SLOT;
+            } else if (g->dir == DIR_UP) {
+                g->sub_py += home_speed_fp;
+                move_px = g->sub_py >> 8;
+                g->sub_py &= 0x00FF;
+                for (uint16_t step = 0; step < move_px; step++) {
+                    g->world_py--;
+                    g->bounce_dist_px++;
+                    if (g->world_py <= g->min_home_py) {
+                        g->world_py = g->min_home_py;
+                        g->dir = DIR_DOWN;
+                        break;
+                    }
                 }
             }
+            g->sub_px = g->world_px << 8;
+        }
+        else if (g->state == GHOST_STATE_MOVING_TO_SLOT) {
+            // Move horizontally along row 14 to center exit column (23, 14) => 184px at base speed (1 px/frame)
+            int16_t target_x = 23 * MAZE_TILES_SIZE_PX;
+
+            if (g->world_px < target_x) {
+                g->dir = DIR_RIGHT;
+                g->world_px++;
+            } else if (g->world_px > target_x) {
+                g->dir = DIR_LEFT;
+                g->world_px--;
+            } else {
+                // Reached center column (23, 14)! Transition to ascending vertically
+                g->state = GHOST_STATE_EXITING_HOUSE;
+                g->dir = DIR_UP;
+                g->sub_py = g->world_py << 8;
+            }
+            g->sub_px = g->world_px << 8;
+            g->sub_py = g->world_py << 8;
+        }
+        else if (g->state == GHOST_STATE_EXITING_HOUSE) {
+            // Ascend vertically from (23, 14) to (23, 12) => 96px at 0.25x of Pac-Man level base speed
+            int16_t target_exit_y = 12 * MAZE_TILES_SIZE_PX; // 96px
+            g->dir = DIR_UP;
+            uint16_t exit_speed_fp = SPEED_TABLE[speed_lvl] >> 2; // 0.25x Pac-Man level speed
+
+            if (g->sub_py > (target_exit_y << 8)) {
+                if (g->sub_py >= (target_exit_y << 8) + exit_speed_fp) {
+                    g->sub_py -= exit_speed_fp;
+                } else {
+                    g->sub_py = target_exit_y << 8;
+                }
+            }
+            g->world_py = g->sub_py >> 8;
+
+            if (g->world_py <= target_exit_y) {
+                g->world_py = target_exit_y;
+                g->sub_px = 0;
+                g->sub_py = 0;
+                g->in_house = false;
+                g->state = GHOST_STATE_OUTSIDE;
+                g->dir = DIR_LEFT;
+            }
+        }
+        else if (g->state == GHOST_STATE_OUTSIDE) {
+            update_ghost_outside_movement(i);
         }
     }
 
-    // --- 2. Manage Queue Exits (Slot 0 Exits Home) ---
+    // --- 2. Manage Ghost Exit Eligibility & Progression ---
     if (s_game_motion_started) {
-        // Check if any ghost is currently moving to slot or exiting house
+        // Check if any ghost is currently exiting or moving to center exit column
         bool exit_in_progress = false;
         for (int i = 0; i < NGHOSTS; i++) {
             if (ghosts[i].state == GHOST_STATE_MOVING_TO_SLOT || ghosts[i].state == GHOST_STATE_EXITING_HOUSE) {
@@ -395,111 +475,66 @@ void ghost_update_motion(void) {
         }
 
         if (!exit_in_progress) {
-            // Find ghost occupying Slot 0
-            for (int i = 0; i < NGHOSTS; i++) {
-                ghost_struct *g = &ghosts[i];
-                if (g->in_house && g->queue_slot == 0 && g->state == GHOST_STATE_HOME_BOUNCE) {
-                    s_exit_delay_timer++;
-                    if (s_exit_delay_timer >= 32) {
-                        s_exit_delay_timer = 0;
+            int candidate_ghost = -1;
+
+            if (s_initial_exit_idx < 4) {
+                // Initial game start progression: Blinky (0) -> Pinky (1) -> Inky (2) -> Clyde (3)
+                candidate_ghost = INITIAL_EXIT_ORDER[s_initial_exit_idx];
+            } else if (s_fifo_count > 0) {
+                // Return FIFO queue progression
+                candidate_ghost = s_fifo_queue[0];
+            }
+
+            if (candidate_ghost >= 0 && candidate_ghost < NGHOSTS) {
+                ghost_struct *g = &ghosts[candidate_ghost];
+                int16_t row14_y = 14 * MAZE_TILES_SIZE_PX; // 112px
+
+                // Required bounce distance before exit: 16px for initial game start ghosts, 80px for returning eaten ghosts
+                uint16_t req_bounce = (s_initial_exit_idx < 4) ? 16 : 80;
+
+                if (g->in_house && g->state == GHOST_STATE_HOME_BOUNCE && g->world_py == row14_y && g->bounce_dist_px >= req_bounce) {
+                    if (g->world_px == (23 * MAZE_TILES_SIZE_PX)) {
+                        // Already on center column (23, 14) -> Start ascending to (23, 12)
                         g->state = GHOST_STATE_EXITING_HOUSE;
                         g->dir = DIR_UP;
+                        g->sub_py = g->world_py << 8; // Initialize subpixel Y accumulator!
+                    } else {
+                        // Move horizontally along row 14 to center column (23, 14)
+                        g->state = GHOST_STATE_MOVING_TO_SLOT;
                     }
-                    break;
+
+                    // Advance exit progression tracker
+                    if (s_initial_exit_idx < 4) {
+                        s_initial_exit_idx++;
+                    } else if (s_fifo_count > 0) {
+                        for (uint8_t f = 0; f < s_fifo_count - 1; f++) {
+                            s_fifo_queue[f] = s_fifo_queue[f + 1];
+                        }
+                        s_fifo_count--;
+                    }
                 }
             }
         }
     }
 
-    // --- 3. Update Ghost Positions per State ---
+    // --- 3. Sprite Frame Selection & XRAM Update ---
     for (int i = 0; i < NGHOSTS; i++) {
         ghost_struct *g = &ghosts[i];
 
-        if (g->state == GHOST_STATE_HOME_BOUNCE) {
-            if (g->dir == DIR_DOWN) {
-                g->world_py++;
-                if (g->world_py >= g->max_home_py) {
-                    g->world_py = g->max_home_py;
-                    g->dir = DIR_UP;
-                }
-            } else if (g->dir == DIR_UP) {
-                g->world_py--;
-                if (g->world_py <= g->min_home_py) {
-                    g->world_py = g->min_home_py;
-                    g->dir = DIR_DOWN;
-                }
-            }
-            g->sub_py = g->world_py << 8;
-            g->sub_px = g->world_px << 8;
-        }
-        else if (g->state == GHOST_STATE_MOVING_TO_SLOT) {
-            // Move toward assigned queue_slot coordinate
-            int16_t target_x = SLOT_X[g->queue_slot];
-            int16_t target_y = SLOT_Y[g->queue_slot];
-
-            if (g->world_px < target_x) {
-                g->dir = DIR_RIGHT;
-                g->world_px++;
-            } else if (g->world_px > target_x) {
-                g->dir = DIR_LEFT;
-                g->world_px--;
-            } else if (g->world_py < target_y) {
-                g->dir = DIR_DOWN;
-                g->world_py++;
-            } else if (g->world_py > target_y) {
-                g->dir = DIR_UP;
-                g->world_py--;
-            } else {
-                // Reached target slot! Transition back to bouncing
-                g->state = GHOST_STATE_HOME_BOUNCE;
-                g->min_home_py = 14 * MAZE_TILES_SIZE_PX;
-                g->max_home_py = 16 * MAZE_TILES_SIZE_PX;
-                g->dir = DIR_DOWN;
-
-                if (g->mode == GHOST_MODE_EATEN) {
-                    // Reset mode: ghost body respawns and returns to normal CHASE state (even if Power Pellet is active)
-                    g->mode = GHOST_MODE_CHASE;
-                }
-            }
-            g->sub_px = g->world_px << 8;
-            g->sub_py = g->world_py << 8;
-        }
-        else if (g->state == GHOST_STATE_EXITING_HOUSE) {
-            int16_t target_exit_y = 12 * MAZE_TILES_SIZE_PX; // 96px
-            g->dir = DIR_UP;
-            g->sub_py -= 0x0040; // 0.25 px/frame exit speed
-            g->world_py = g->sub_py >> 8;
-
-            if (g->world_py <= target_exit_y) {
-                g->world_py = target_exit_y;
-                g->sub_px = 0;
-                g->sub_py = 0;
-                g->in_house = false;
-                g->queue_slot = -1; // No longer in home queue
-                g->state = GHOST_STATE_OUTSIDE;
-                g->dir = DIR_LEFT;
-
-                s_exit_delay_timer = 0;
-            }
-        }
-        else if (g->state == GHOST_STATE_OUTSIDE) {
-            update_ghost_outside_movement(i);
-        }
-
-        // --- 4. Sprite Frame Selection ---
         if (g->mode == GHOST_MODE_FRIGHTENED) {
-            // Flashing cadence increases as timer nears the end
-            // Last 180 frames (3 seconds):
-            // - 180..121 frames: slow flash (every 16 frames)
-            // - 120..61 frames:  medium flash (every 8 frames)
-            // - 60..1 frames:    fast flash (every 4 frames)
+            // Flashing cadence stage logic:
+            // Constant total flashing duration = 240 frames (Stage 1: 144 frames, Stage 2: 96 frames)
+            // - s_frightened_timer <= 96: Stage 2 (last 96 frames) -> 6 frames blue (40,41), 2 frames white (42,43) [8-frame cycle]
+            // - s_frightened_timer <= 240: Stage 1 (240..97 frames) -> 12 frames blue (40,41), 4 frames white (42,43) [16-frame cycle]
+            // - s_frightened_timer > 240: Solid vulnerable blue (40,41)
             bool show_white = false;
-            if (s_frightened_timer <= 60) {
-                show_white = ((s_frightened_timer % 8) < 4);
-            } else if (s_frightened_timer <= 120) {
-                show_white = ((s_frightened_timer % 16) < 8);
-            } else if (s_frightened_timer <= 180) {
-                show_white = ((s_frightened_timer % 32) < 16);
+
+            if (s_frightened_timer <= 96) {
+                // Stage 2: 6 frames blue (40,41), 2 frames white (42,43)
+                show_white = ((s_frightened_timer % 8) < 2);
+            } else if (s_frightened_timer <= 240) {
+                // Stage 1: 12 frames blue (40,41), 4 frames white (42,43)
+                show_white = ((s_frightened_timer % 16) < 4);
             }
 
             if (show_white) {

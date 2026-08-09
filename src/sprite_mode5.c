@@ -3,6 +3,7 @@
 #include "constants.h"
 #include "sprite_mode5.h"
 #include "tile_mode2.h"
+#include "player.h"
 
 // Store the player config address for updates
 unsigned PLAYER_CONFIG;
@@ -116,67 +117,67 @@ void sprite_mode5_init(void) {
 
 // Call this before calling sprite_mode5_init()
 void init_ghost_data(void) {
-    // Red (Blinky - Ghost 0): tile (23, 14) => world (184, 112) -> Queue Slot 0
+    // Red (Blinky - Ghost 0): start at (23, 14), bounce between (23, 14) and (23, 16), initial DIR_DOWN
     ghosts[0].world_px = 23 * MAZE_TILES_SIZE_PX; // 184
     ghosts[0].world_py = 14 * MAZE_TILES_SIZE_PX; // 112
     ghosts[0].x_pos_px = ghosts[0].world_px + maze_dx;
     ghosts[0].y_pos_px = ghosts[0].world_py - 3;
-    ghosts[0].dir = 4; // DIR_DOWN
+    ghosts[0].dir = DIR_DOWN;
     ghosts[0].frame = 10;
     ghosts[0].in_house = true;
-    ghosts[0].min_home_py = 14 * MAZE_TILES_SIZE_PX;
-    ghosts[0].max_home_py = 16 * MAZE_TILES_SIZE_PX;
+    ghosts[0].min_home_py = 14 * MAZE_TILES_SIZE_PX; // (23, 14) -> 112px
+    ghosts[0].max_home_py = 16 * MAZE_TILES_SIZE_PX; // (23, 16) -> 128px
     ghosts[0].state = 0; // GHOST_STATE_HOME_BOUNCE
     ghosts[0].mode = 0;  // CHASE
-    ghosts[0].queue_slot = 0; // Slot 0: (23, 14)
+    ghosts[0].bounce_dist_px = 0; // Must complete bounce down to (23,16) and back to (23,14) before exiting
     ghosts[0].sub_px = ghosts[0].world_px << 8;
     ghosts[0].sub_py = ghosts[0].world_py << 8;
 
-    // Pink (Pinky - Ghost 1): tile (23, 16) => world (184, 128) -> Queue Slot 1
+    // Pink (Pinky - Ghost 1): start at (23, 16), bounce between (23, 14) and (23, 16), initial DIR_UP
     ghosts[1].world_px = 23 * MAZE_TILES_SIZE_PX; // 184
     ghosts[1].world_py = 16 * MAZE_TILES_SIZE_PX; // 128
     ghosts[1].x_pos_px = ghosts[1].world_px + maze_dx;
     ghosts[1].y_pos_px = ghosts[1].world_py - 3;
-    ghosts[1].dir = 3; // DIR_UP
+    ghosts[1].dir = DIR_UP;
     ghosts[1].frame = 16;
     ghosts[1].in_house = true;
-    ghosts[1].min_home_py = 14 * MAZE_TILES_SIZE_PX;
-    ghosts[1].max_home_py = 16 * MAZE_TILES_SIZE_PX;
+    ghosts[1].min_home_py = 14 * MAZE_TILES_SIZE_PX; // (23, 14) -> 112px
+    ghosts[1].max_home_py = 16 * MAZE_TILES_SIZE_PX; // (23, 16) -> 128px
     ghosts[1].state = 0; // GHOST_STATE_HOME_BOUNCE
     ghosts[1].mode = 0;  // CHASE
-    ghosts[1].queue_slot = 1; // Slot 1: (23, 16)
+    ghosts[1].bounce_dist_px = 0; // Must complete bounce cycle before exiting
     ghosts[1].sub_px = ghosts[1].world_px << 8;
     ghosts[1].sub_py = ghosts[1].world_py << 8;
 
-    // Cyan (Inky - Ghost 2): tile (21, 15) => world (168, 120) -> Queue Slot 2
+    // Cyan (Inky - Ghost 2): start at (21, 15), bounce between (21, 14) and (21, 16), initial DIR_DOWN
     ghosts[2].world_px = 21 * MAZE_TILES_SIZE_PX; // 168
     ghosts[2].world_py = 15 * MAZE_TILES_SIZE_PX; // 120
     ghosts[2].x_pos_px = ghosts[2].world_px + maze_dx;
     ghosts[2].y_pos_px = ghosts[2].world_py - 3;
-    ghosts[2].dir = 4; // DIR_DOWN
+    ghosts[2].dir = DIR_DOWN;
     ghosts[2].frame = 26;
     ghosts[2].in_house = true;
-    ghosts[2].min_home_py = 14 * MAZE_TILES_SIZE_PX;
-    ghosts[2].max_home_py = 16 * MAZE_TILES_SIZE_PX;
+    ghosts[2].min_home_py = 14 * MAZE_TILES_SIZE_PX; // (21, 14) -> 112px
+    ghosts[2].max_home_py = 16 * MAZE_TILES_SIZE_PX; // (21, 16) -> 128px
     ghosts[2].state = 0; // GHOST_STATE_HOME_BOUNCE
     ghosts[2].mode = 0;  // CHASE
-    ghosts[2].queue_slot = 2; // Slot 2: (21, 15)
+    ghosts[2].bounce_dist_px = 0; // Must complete bounce cycle before exiting
     ghosts[2].sub_px = ghosts[2].world_px << 8;
     ghosts[2].sub_py = ghosts[2].world_py << 8;
 
-    // Orange (Clyde - Ghost 3): tile (25, 15) => world (200, 120) -> Queue Slot 3
+    // Orange (Clyde - Ghost 3): start at (25, 15), bounce between (25, 14) and (25, 16), initial DIR_DOWN
     ghosts[3].world_px = 25 * MAZE_TILES_SIZE_PX; // 200
     ghosts[3].world_py = 15 * MAZE_TILES_SIZE_PX; // 120
     ghosts[3].x_pos_px = ghosts[3].world_px + maze_dx;
     ghosts[3].y_pos_px = ghosts[3].world_py - 3;
-    ghosts[3].dir = 4; // DIR_DOWN
+    ghosts[3].dir = DIR_DOWN;
     ghosts[3].frame = 34;
     ghosts[3].in_house = true;
-    ghosts[3].min_home_py = 14 * MAZE_TILES_SIZE_PX;
-    ghosts[3].max_home_py = 16 * MAZE_TILES_SIZE_PX;
+    ghosts[3].min_home_py = 14 * MAZE_TILES_SIZE_PX; // (25, 14) -> 112px
+    ghosts[3].max_home_py = 16 * MAZE_TILES_SIZE_PX; // (25, 16) -> 128px
     ghosts[3].state = 0; // GHOST_STATE_HOME_BOUNCE
     ghosts[3].mode = 0;  // CHASE
-    ghosts[3].queue_slot = 3; // Slot 3: (25, 15)
+    ghosts[3].bounce_dist_px = 0; // Must complete bounce cycle before exiting
     ghosts[3].sub_px = ghosts[3].world_px << 8;
     ghosts[3].sub_py = ghosts[3].world_py << 8;
 }
