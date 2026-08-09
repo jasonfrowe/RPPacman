@@ -1,6 +1,7 @@
 #include <rp6502.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include "constants.h"
 #include "tile_mode2.h"
 #include "sprite_mode5.h"
@@ -18,6 +19,7 @@ static const uint8_t GHOST_BASE_FRAMES[NGHOSTS] = { 8, 16, 24, 32 };
 #define GHOST_STATE_MOVING_TO_SLOT 1
 #define GHOST_STATE_EXITING_HOUSE   2
 #define GHOST_STATE_OUTSIDE         3
+#define GHOST_STATE_ENTERING_HOUSE  4
 
 #define GHOST_MODE_CHASE        0
 #define GHOST_MODE_FRIGHTENED   1
@@ -241,34 +243,18 @@ static void update_ghost_outside_movement(int ghost_index) {
             g->world_py += 184;
         }
 
-        // Check if eaten eyes reached home entrance tile (23, 12) => world (184, 96)
+        // Step 1 of eaten return: Eyes reach home entrance door tile (23, 12) => world (184, 96)
         if (g->mode == GHOST_MODE_EATEN) {
             int16_t door_x = 23 * MAZE_TILES_SIZE_PX; // 184
             int16_t door_y = 12 * MAZE_TILES_SIZE_PX; // 96
 
             if (g->world_px == door_x && g->world_py == door_y) {
-                // Snap ghost back to row 16 (128px) at its designated X column, initial movement DIR_UP
-                g->world_px = GHOST_HOME_X[ghost_index];
-                g->world_py = GHOST_MAX_Y[ghost_index]; // Row 16 (128px)
+                // Transition to GHOST_STATE_ENTERING_HOUSE to descend into house down to row 16 (128px)
+                g->in_house = true;
+                g->state = GHOST_STATE_ENTERING_HOUSE;
+                g->dir = DIR_DOWN;
                 g->sub_px = g->world_px << 8;
                 g->sub_py = g->world_py << 8;
-                g->bounce_dist_px = 0; // Reset 80px cooldown tracker (requires 80px bounce before next spawn)
-                g->in_house = true;
-                g->state = GHOST_STATE_HOME_BOUNCE;
-                g->dir = DIR_UP; // Initial movement UP
-                g->mode = GHOST_MODE_CHASE; // Reset mode to normal CHASE state
-
-                // Enqueue ghost into FIFO return queue if not already queued
-                bool already_queued = false;
-                for (uint8_t f = 0; f < s_fifo_count; f++) {
-                    if (s_fifo_queue[f] == ghost_index) {
-                        already_queued = true;
-                        break;
-                    }
-                }
-                if (!already_queued && s_fifo_count < 4) {
-                    s_fifo_queue[s_fifo_count++] = ghost_index;
-                }
                 break;
             }
         }
@@ -283,7 +269,7 @@ static void update_ghost_outside_movement(int ghost_index) {
 
             int16_t target_tx, target_ty;
             if (g->mode == GHOST_MODE_EATEN) {
-                // Eaten eyes target home door tile (23, 12)
+                // Step 1: Eaten eyes target home door tile (23, 12) from outside
                 target_tx = 23;
                 target_ty = 12;
             } else if (g->mode == GHOST_MODE_FRIGHTENED) {
@@ -475,6 +461,50 @@ void ghost_update_motion(void) {
             }
             g->sub_px = g->world_px << 8;
             g->sub_py = g->world_py << 8;
+        }
+        else if (g->state == GHOST_STATE_ENTERING_HOUSE) {
+            // Eaten return Step 2: Eyes descend from (23, 12) to row 16 (23, 16) at 2.0x speed
+            int16_t row16_y = 16 * MAZE_TILES_SIZE_PX; // 128px
+            int16_t home_x = GHOST_HOME_X[i];
+            uint16_t enter_speed_fp = SPEED_TABLE[speed_lvl] * 2; // 2.0x speed for eaten eyes
+
+            g->dir = DIR_DOWN;
+            g->sub_py += enter_speed_fp;
+            g->world_py = g->sub_py >> 8;
+
+            if (g->world_py >= row16_y) {
+                g->world_py = row16_y;
+                g->sub_py = row16_y << 8;
+
+                // Eaten return Step 3: Move horizontally to designated spawn X column
+                if (g->world_px < home_x) {
+                    g->dir = DIR_RIGHT;
+                    g->world_px++;
+                    g->sub_px = g->world_px << 8;
+                } else if (g->world_px > home_x) {
+                    g->dir = DIR_LEFT;
+                    g->world_px--;
+                    g->sub_px = g->world_px << 8;
+                } else {
+                    // Reached home spawn position (home_x, 16)! Restore normal CHASE mode & start home bounce facing DIR_UP
+                    g->mode = GHOST_MODE_CHASE;
+                    g->state = GHOST_STATE_HOME_BOUNCE;
+                    g->dir = DIR_UP;
+                    g->bounce_dist_px = 0; // Reset 80px cooldown tracker
+
+                    // Enqueue ghost into FIFO return queue if not already queued
+                    bool already_queued = false;
+                    for (uint8_t f = 0; f < s_fifo_count; f++) {
+                        if (s_fifo_queue[f] == i) {
+                            already_queued = true;
+                            break;
+                        }
+                    }
+                    if (!already_queued && s_fifo_count < 4) {
+                        s_fifo_queue[s_fifo_count++] = i;
+                    }
+                }
+            }
         }
         else if (g->state == GHOST_STATE_EXITING_HOUSE) {
             // Ascend vertically from (23, 14) to (23, 12) => 96px at 0.25x of Pac-Man level base speed

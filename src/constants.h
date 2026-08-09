@@ -14,6 +14,8 @@
 #define NGHOSTS 4                                   // Number of ghosts in the game
 #define NPRIZES 2                                   // Number of prizes in the game
 #define NMAZE_MUNCHERS 12                           // Number of maze transition munchers 
+#define NSPARKLES 6                                 // Number of sparkle frames for prize animation 
+#define NGHOST_SCORE_DISPLAYS 16       // 4 digits with 4 ghost score displays (4 digits * 4 ghosts = 16 bytes)
 
 // Sprite data configuration
 #define SPRITE_DATA_START       0x0000U             // Starting address in XRAM for sprite data
@@ -69,5 +71,6 @@ extern unsigned TEXT_MAP_CONFIG;                    // Text map configuration
 extern unsigned PRIZE_CONFIG;                       // Prize configuration
 extern unsigned PRIZE_SPARKLE_CONFIG;                // Prize sparkle configuration
 extern unsigned MAZE_MUNCHERS_CONFIG;              // Maze transition configuration
+extern unsigned GHOST_SCORE_CONFIG;                  // Ghost score configuration
 
 #endif // CONSTANTS_H

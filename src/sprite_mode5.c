@@ -11,6 +11,7 @@ unsigned GHOST_CONFIG;
 unsigned PRIZE_CONFIG;
 unsigned PRIZE_SPARKLE_CONFIG;
 unsigned MAZE_MUNCHERS_CONFIG;
+unsigned GHOST_SCORE_CONFIG;
 
 
 ghost_struct ghosts[NGHOSTS];
@@ -43,7 +44,6 @@ void sprite_mode5_init(void) {
         xram0_struct_set(muncher_config, vga_mode5_sprite_t, palette_ptr, PLAYER_PALETTE_ADDR);
     }
 
-
     PRIZE_CONFIG = MAZE_MUNCHERS_CONFIG + NMAZE_MUNCHERS * sizeof(vga_mode5_sprite_t); // After maze transition config
     
     for (int i = 0; i < NPRIZES; i++) {
@@ -64,7 +64,7 @@ void sprite_mode5_init(void) {
 
     PRIZE_SPARKLE_CONFIG = PRIZE_CONFIG + NPRIZES * sizeof(vga_mode5_sprite_t); // After prize config
 
-    for (int i = 0; i < NPRIZES; i++) {
+    for (int i = 0; i < NSPARKLES; i++) {
         // Calculate the base address for the current prize sparkle once
         uint16_t current_prize_sparkle_config = PRIZE_SPARKLE_CONFIG + (i * sizeof(vga_mode5_sprite_t));
 
@@ -76,8 +76,18 @@ void sprite_mode5_init(void) {
         xram0_struct_set(current_prize_sparkle_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE))); // Sparkle frame index 48
         xram0_struct_set(current_prize_sparkle_config, vga_mode5_sprite_t, palette_ptr, PLAYER_PALETTE_ADDR);
     }
+
+    GHOST_SCORE_CONFIG = PRIZE_SPARKLE_CONFIG + NSPARKLES * sizeof(vga_mode5_sprite_t); // After prize sparkle config
+    for (int i = 0; i < NGHOST_SCORE_DISPLAYS; i++) {
+        unsigned current_ghost_score_config = GHOST_SCORE_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+        xram0_struct_set(current_ghost_score_config, vga_mode5_sprite_t, x_pos_px, -32);  // Park off-screen (-32, -32)
+        xram0_struct_set(current_ghost_score_config, vga_mode5_sprite_t, y_pos_px, -32);
+        xram0_struct_set(current_ghost_score_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE))); // Set to blank sprite frame (48)
+        xram0_struct_set(current_ghost_score_config, vga_mode5_sprite_t, palette_ptr, PLAYER_PALETTE_ADDR);
+    }
     
-    GHOST_CONFIG = PRIZE_SPARKLE_CONFIG + NPRIZES * sizeof(vga_mode5_sprite_t); // After prize sparkle config
+    
+    GHOST_CONFIG = GHOST_SCORE_CONFIG + NGHOST_SCORE_DISPLAYS * sizeof(vga_mode5_sprite_t); // After prize sparkle config
 
     for (int i = 0; i < NGHOSTS; i++) {
         // Calculate the base address for the current ghost once
@@ -109,7 +119,7 @@ void sprite_mode5_init(void) {
     }
 
     // Mode 5 args: MODE, OPTIONS, CONFIG, LENGTH, PLANE, BEGIN, END
-    if (xreg_vga_mode(5, 0x0A, MAZE_MUNCHERS_CONFIG, 1 + NGHOSTS + NPRIZES + NPRIZES + NMAZE_MUNCHERS, 1, 0, 0) < 0) {
+    if (xreg_vga_mode(5, 0x0A, MAZE_MUNCHERS_CONFIG, 1 + NGHOSTS + NGHOST_SCORE_DISPLAYS+ NPRIZES + NSPARKLES + NMAZE_MUNCHERS, 1, 0, 0) < 0) {
         return;
     }
 
