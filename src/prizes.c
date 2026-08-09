@@ -5,6 +5,7 @@
 #include "tile_mode2.h"
 #include "sprite_mode5.h"
 #include "prizes.h"
+#include "ghost.h"
 
 uint8_t left_side_level = 0;
 uint8_t right_side_level = 0;
@@ -193,6 +194,7 @@ void update_maze_munchers_animation(void) {
                 if (elapsed == 0 || (elapsed % 16 == 0 && step <= 7)) {
                     uint16_t tx = s_transitions[s].is_right_side ? (28 + col) : (18 - col);
                     copy_single_column_with_offset(s_transitions[s].target_level, tx, offset_val);
+                    check_and_reset_stuck_ghosts();
                 }
             } else {
                 side_has_active_columns = true;

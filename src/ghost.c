@@ -338,6 +338,48 @@ static void update_ghost_outside_movement(int ghost_index) {
     }
 }
 
+void check_and_reset_stuck_ghosts(void) {
+    for (int i = 0; i < NGHOSTS; i++) {
+        ghost_struct *g = &ghosts[i];
+        if (g->in_house || g->state != GHOST_STATE_OUTSIDE) continue;
+
+        uint16_t tx = (uint16_t)(g->world_px / MAZE_TILES_SIZE_PX);
+        uint16_t ty = (uint16_t)(g->world_py / MAZE_TILES_SIZE_PX);
+
+        if (tx >= MAZE_MAP_WIDTH || ty >= MAZE_MAP_HEIGHT) continue;
+
+        uint16_t offset = ty * MAZE_MAP_WIDTH + tx;
+        RIA.addr0 = MAZE_MAP_DATA + offset;
+        RIA.step0 = 1;
+        uint8_t tile_val = RIA.rw0;
+
+        // Check if ghost is on an invalid wall tile (1..115 or 126..127)
+        if ((tile_val >= 1 && tile_val <= 115) || (tile_val >= 126 && tile_val <= 127)) {
+            // Reset ghost back to home base position, preserving current mode (e.g. FRIGHTENED stays FRIGHTENED)
+            g->world_px = GHOST_HOME_X[i];
+            g->world_py = GHOST_MAX_Y[i]; // Row 16 (128px)
+            g->sub_px = g->world_px << 8;
+            g->sub_py = g->world_py << 8;
+            g->bounce_dist_px = 0;
+            g->in_house = true;
+            g->state = GHOST_STATE_HOME_BOUNCE;
+            g->dir = DIR_UP;
+
+            // Enqueue ghost into return queue so it exits home sequentially
+            bool already_queued = false;
+            for (uint8_t f = 0; f < s_fifo_count; f++) {
+                if (s_fifo_queue[f] == i) {
+                    already_queued = true;
+                    break;
+                }
+            }
+            if (!already_queued && s_fifo_count < 4) {
+                s_fifo_queue[s_fifo_count++] = i;
+            }
+        }
+    }
+}
+
 void ghost_update_motion(void) {
     static uint8_t anim_timer = 0;
     static uint8_t anim_cell = 0;
