@@ -220,6 +220,9 @@ uint8_t get_speed_level_index(void) {
 }
 
 void player_update_motion(const input_actions_t *actions) {
+    if (is_eat_pause_active()) {
+        return;
+    }
 
     // 1. Buffer user direction input (support diagonal D-pad input)
     // If holding a diagonal (e.g. up + right while moving right), prioritize the perpendicular turn direction (up).

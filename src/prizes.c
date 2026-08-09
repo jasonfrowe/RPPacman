@@ -103,6 +103,10 @@ static void trigger_maze_transition(uint8_t target_level, bool is_right_side) {
 }
 
 void update_maze_munchers_animation(void) {
+    if (is_eat_pause_active()) {
+        return;
+    }
+
     bool any_active = s_transitions[0].active || s_transitions[1].active;
 
     if (!any_active) {

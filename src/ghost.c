@@ -44,6 +44,109 @@ static uint8_t s_fifo_count = 0;
 
 static uint16_t s_exit_delay_timer = 0;
 static bool s_game_motion_started = false;
+static uint8_t s_eat_pause_timer = 0; // Freeze movement during 30-frame eat animation pause
+
+bool is_eat_pause_active(void) {
+    return s_eat_pause_timer > 0;
+}
+
+// Sparkle offsets relative to Pac-Man's drawn position for frames 1..10
+typedef struct {
+    int8_t dx;
+    int8_t dy;
+} sparkle_pos_t;
+
+static const sparkle_pos_t SPARKLE_ANIM_POS[10][NSPARKLES] = {
+    // Frame 1
+    { {-20, 10}, {-9, -1},  {-8, 11},  {3, 2},   {4, -7},   {17, -19} },
+    // Frame 2
+    { {-30, 17}, {-17, 1},  {-16, 3},  {7, 8},   {9, -10},  {27, -26} },
+    // Frame 3
+    { {-40, 23}, {-25, 3},  {-24, -5}, {11, 14}, {14, -13}, {37, -33} },
+    // Frame 4
+    { {-45, 30},  {-29, 4},  {-28, -9}, {13, 17}, {16, 14},  {42, -40} },
+    // Frame 5
+    { {-50, 37},  {-33, 5},  {-32, -13},{15, 20}, {18, -16}, {47, -44} },
+    // Frame 6
+    { {-52, 44},  {-35, 5},  {-34, -15},{16, 21}, {19, -16}, {52, -46} },
+    // Frame 7
+    { {-54, 51},  {-35, 5},  {-34, -15},{16, 21}, {19, -16}, {54, -48}  },
+    // Frame 8
+    { {-54, 51},  {-35, 5},  {-34, -15},{16, 21}, {19, -16}, {54, -48}  },
+    // Frame 9
+    { {-54, 51},  {-35, 5},  {-34, -15},{16, 21}, {19, -16}, {54, -48}  },
+    // Frame 10
+    { {-54, 51},  {-35, 5},  {-34, -15},{16, 21}, {19, -16}, {54, -48}  }
+};
+
+// Score digit offsets relative to Pac-Man's drawn position for frames 1..10
+typedef struct {
+    int8_t dx;
+    int8_t dy;
+} score_digit_pos_t;
+
+static const score_digit_pos_t SCORE_DIGIT_ANIM_POS[10][4] = {
+    // Frame 1
+    { {1, 0},   {3, 0},   {5, 0},   {7, 0}   },
+    // Frame 2
+    { {0, -8},  {3, -8},  {5, -8},  {8, -8}  },
+    // Frame 3
+    { {-2, -12},{2, -12}, {6, -12}, {10, -12}},
+    // Frame 4
+    { {-4, -16},{2, -16}, {6, -16}, {12, -16}},
+    // Frame 5
+    { {-6, -18},{1, -18}, {7, -18}, {14, -18}},
+    // Frame 6
+    { {-7, -20},{1, -20}, {7, -20}, {15, -20}},
+    // Frame 7
+    { {-7, -21},{1, -21}, {7, -21}, {15, -21}},
+    // Frame 8
+    { {-7, -22},{1, -22}, {7, -22}, {15, -22}},
+    // Frame 9
+    { {-7, -23},{1, -23}, {7, -23}, {15, -23}},
+    // Frame 10
+    { {-8, -24},{0, -24}, {8, -24}, {16, -24}}
+};
+
+// Eaten ghost score animation tracking structure for single score display slot
+typedef struct {
+    bool active;
+    uint8_t ghost_index;
+    uint8_t anim_frame;        // 1..120
+    int16_t pacman_world_x;     // Pac-Man's world X when ghost was eaten
+    int16_t pacman_world_y;     // Pac-Man's world Y when ghost was eaten
+    uint8_t digits[4];         // 4 sprite frame indices (107..116 for digits 0..9)
+} eaten_score_anim_t;
+
+static eaten_score_anim_t s_single_score_anim;
+
+// Current active eat animation state (when s_eat_pause_timer > 0)
+static uint8_t s_active_eat_anim_ghost = 0;
+
+void trigger_eaten_ghost_animation(uint8_t ghost_index, uint32_t pts) {
+    s_active_eat_anim_ghost = ghost_index;
+
+    // Use single score display slot. Any existing score display is overwritten by the new one.
+    eaten_score_anim_t *sa = &s_single_score_anim;
+    sa->active = true;
+    sa->ghost_index = ghost_index;
+    sa->anim_frame = 1;
+    sa->pacman_world_x = player.world_px;
+    sa->pacman_world_y = player.world_py;
+
+    // Convert pts (e.g. 400, 800, 1200, 1600, 2000, 2400, 2800, 3200) into 4 digit sprite tile indices
+    // Numbers 1..9, 0 use tile indices 107..116 (1->107, 2->108, ..., 9->115, 0->116).
+    // Blank leading zeros using tile index 48 so 800 renders as ' 800' instead of '0800'.
+    uint16_t thousands = (pts / 1000) % 10;
+    uint16_t hundreds  = (pts / 100) % 10;
+    uint16_t tens      = (pts / 10) % 10;
+    uint16_t ones      = pts % 10;
+
+    sa->digits[0] = (thousands == 0) ? 48 : (106 + thousands);
+    sa->digits[1] = (thousands == 0 && hundreds == 0) ? 48 : ((hundreds == 0) ? 116 : (106 + hundreds));
+    sa->digits[2] = (thousands == 0 && hundreds == 0 && tens == 0) ? 48 : ((tens == 0) ? 116 : (106 + tens));
+    sa->digits[3] = (ones == 0) ? 116 : (106 + ones);
+}
 
 // Power Pellet Frightened State Tracking
 static uint16_t s_frightened_timer = 0;
@@ -121,6 +224,10 @@ void check_pacman_ghost_collisions(void) {
 
                 player.score += pts;
                 update_player_score_display(player.score);
+
+                // Set 30-frame pause for all motion & trigger eat animation
+                s_eat_pause_timer = 30;
+                trigger_eaten_ghost_animation(i, pts);
             }
         }
     }
@@ -367,6 +474,12 @@ void check_and_reset_stuck_ghosts(void) {
 }
 
 void ghost_update_motion(void) {
+    if (s_eat_pause_timer > 0) {
+        s_eat_pause_timer--;
+        // Bypass movement and collision updates during pause, but continue to section 3 to render sparkles & scores!
+        goto render_sprites;
+    }
+
     static uint8_t anim_timer = 0;
     static uint8_t anim_cell = 0;
 
@@ -589,6 +702,7 @@ void ghost_update_motion(void) {
         }
     }
 
+render_sprites:
     // --- 3. Sprite Frame Selection & XRAM Update ---
     for (int i = 0; i < NGHOSTS; i++) {
         ghost_struct *g = &ghosts[i];
@@ -643,8 +757,80 @@ void ghost_update_motion(void) {
 
         // Update ghost sprite configuration in XRAM
         unsigned current_ghost_config = GHOST_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+
+        // If this ghost was just eaten and we are in the 30-frame pause, replace frame with blank tile 48 on frame 2+
+        if (s_eat_pause_timer > 0 && i == s_active_eat_anim_ghost) {
+            uint8_t pause_frame_step = 30 - s_eat_pause_timer + 1; // 1..30
+            if (pause_frame_step >= 2) {
+                g->frame = 48; // Blank tile frame
+            }
+        }
+
         xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, x_pos_px, g->x_pos_px);
         xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, y_pos_px, g->y_pos_px);
         xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (g->frame * SPRITE_FRAME_SIZE)));
+    }
+
+    // --- 4. Render Eat Animation Sparkles (NSPARKLES = 6) ---
+    // Sparkles appear for the first 30 frames when s_eat_pause_timer > 0
+    if (s_eat_pause_timer > 0) {
+        uint8_t anim_step = 30 - s_eat_pause_timer; // 0..29
+        uint8_t table_idx = (anim_step >= 10) ? 9 : anim_step;
+        int16_t pm_drawn_x = player.world_px + maze_dx - 3;
+        int16_t pm_drawn_y = player.world_py - 3;
+
+        for (int k = 0; k < NSPARKLES; k++) {
+            unsigned sparkle_config = PRIZE_SPARKLE_CONFIG + (k * sizeof(vga_mode5_sprite_t));
+            int16_t sp_x = pm_drawn_x + SPARKLE_ANIM_POS[table_idx][k].dx;
+            int16_t sp_y = pm_drawn_y + SPARKLE_ANIM_POS[table_idx][k].dy;
+
+            xram0_struct_set(sparkle_config, vga_mode5_sprite_t, x_pos_px, sp_x);
+            xram0_struct_set(sparkle_config, vga_mode5_sprite_t, y_pos_px, sp_y);
+            xram0_struct_set(sparkle_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (81 * SPRITE_FRAME_SIZE))); // Sparkle tile index 81
+        }
+    } else {
+        // Park sparkles off-screen when not pausing
+        for (int k = 0; k < NSPARKLES; k++) {
+            unsigned sparkle_config = PRIZE_SPARKLE_CONFIG + (k * sizeof(vga_mode5_sprite_t));
+            xram0_struct_set(sparkle_config, vga_mode5_sprite_t, x_pos_px, -32);
+            xram0_struct_set(sparkle_config, vga_mode5_sprite_t, y_pos_px, -32);
+            xram0_struct_set(sparkle_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE))); // Blank tile 48
+        }
+    }
+
+    // --- 5. Render Eaten Ghost Score Display (1 slot of 4 digits) ---
+    // Displays remain visible for 120 frames total. During scrolling, coordinates track the maze world position.
+    eaten_score_anim_t *sa = &s_single_score_anim;
+    if (!sa->active) {
+        // Park 4 digit sprites off-screen when inactive
+        for (int d = 0; d < 4; d++) {
+            unsigned score_config = GHOST_SCORE_CONFIG + (d * sizeof(vga_mode5_sprite_t));
+            xram0_struct_set(score_config, vga_mode5_sprite_t, x_pos_px, -32);
+            xram0_struct_set(score_config, vga_mode5_sprite_t, y_pos_px, -32);
+            xram0_struct_set(score_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+        }
+    } else {
+        // Determine current frame step 1..10 (holds on frame 10 position from frame 10 to 120)
+        uint8_t pos_step_idx = (sa->anim_frame <= 10) ? (sa->anim_frame - 1) : 9;
+
+        // Position relative to Pac-Man's world position when eaten (so score stays stationary on the maze during scrolling)
+        int16_t pm_drawn_x = sa->pacman_world_x + maze_dx - 3;
+        int16_t pm_drawn_y = sa->pacman_world_y - 3;
+
+        for (int d = 0; d < 4; d++) {
+            unsigned score_config = GHOST_SCORE_CONFIG + (d * sizeof(vga_mode5_sprite_t));
+            int16_t digit_x = pm_drawn_x + SCORE_DIGIT_ANIM_POS[pos_step_idx][d].dx;
+            int16_t digit_y = pm_drawn_y + SCORE_DIGIT_ANIM_POS[pos_step_idx][d].dy;
+
+            xram0_struct_set(score_config, vga_mode5_sprite_t, x_pos_px, digit_x);
+            xram0_struct_set(score_config, vga_mode5_sprite_t, y_pos_px, digit_y);
+            xram0_struct_set(score_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (sa->digits[d] * SPRITE_FRAME_SIZE)));
+        }
+
+        // Increment frame counter
+        sa->anim_frame++;
+        if (sa->anim_frame > 120) {
+            sa->active = false;
+        }
     }
 }
