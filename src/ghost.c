@@ -177,7 +177,36 @@ void trigger_eaten_ghost_animation(uint8_t ghost_index, uint32_t pts) {
     sa->digits[3] = (ones == 0) ? 116 : (106 + ones);
 }
 
-// Level-scaled Power Pellet total durations in 60 FPS frames (Level 0 Cherry: 600 frames / 10.0s -> Level 21 Crown: 240 frames / 4.0s)
+// Prize score animation tracking structure (2 slots for left/right prizes)
+typedef struct {
+    bool active;
+    uint8_t anim_frame;    // 1..120
+    int16_t pacman_world_x; // Pac-Man's world X when prize was eaten
+    int16_t pacman_world_y; // Pac-Man's world Y when prize was eaten
+    uint8_t digits[4];     // 4 sprite frame indices
+} prize_score_anim_t;
+
+static prize_score_anim_t s_prize_score_anims[NPRIZES]; // Slot 0 for left prize, Slot 1 for right prize
+
+void trigger_prize_score_animation(uint8_t prize_index, uint16_t pts) {
+    if (prize_index >= NPRIZES) return;
+
+    prize_score_anim_t *pa = &s_prize_score_anims[prize_index];
+    pa->active = true;
+    pa->anim_frame = 1;
+    pa->pacman_world_x = player.world_px;
+    pa->pacman_world_y = player.world_py;
+
+    uint16_t thousands = (pts / 1000) % 10;
+    uint16_t hundreds  = (pts / 100) % 10;
+    uint16_t tens      = (pts / 10) % 10;
+    uint16_t ones      = pts % 10;
+
+    pa->digits[0] = (thousands == 0) ? 48 : (106 + thousands);
+    pa->digits[1] = (thousands == 0 && hundreds == 0) ? 48 : ((hundreds == 0) ? 116 : (106 + hundreds));
+    pa->digits[2] = (thousands == 0 && hundreds == 0 && tens == 0) ? 48 : ((tens == 0) ? 116 : (106 + tens));
+    pa->digits[3] = (ones == 0) ? 116 : (106 + ones);
+}
 static const uint16_t FRIGHTENED_DURATION_TABLE[22] = {
     600, 583, 566, 549, 531, 514, 497, 480, 463, 446,
     429, 411, 394, 377, 360, 343, 326, 309, 291, 274, 257, 240
@@ -1052,6 +1081,56 @@ render_sprites:
         sa->anim_frame++;
         if (sa->anim_frame > 120) {
             sa->active = false;
+        }
+    }
+
+    // --- 6. Render Captured Prize Score Displays (Slots 1 & 2 of GHOST_SCORE_CONFIG) ---
+    // Total duration: 120 frames. Frame 1: Frame 2: place at Pac-Man's Y with X offsets -8, 0, 8, 16. Next 7 frames: move up 1px/frame. Remaining 112 frames: hold.
+    static const int8_t PRIZE_DIGIT_X_OFFSETS[4] = { -8, 0, 8, 16 };
+
+    for (int p_idx = 0; p_idx < NPRIZES; p_idx++) {
+        prize_score_anim_t *pa = &s_prize_score_anims[p_idx];
+        uint8_t slot_offset = (1 + p_idx) * 4; // Slot 1 starts at 4, Slot 2 starts at 8
+
+        if (!pa->active) {
+            for (int d = 0; d < 4; d++) {
+                unsigned score_config = GHOST_SCORE_CONFIG + ((slot_offset + d) * sizeof(vga_mode5_sprite_t));
+                xram0_struct_set(score_config, vga_mode5_sprite_t, x_pos_px, -32);
+                xram0_struct_set(score_config, vga_mode5_sprite_t, y_pos_px, -32);
+                xram0_struct_set(score_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+            }
+        } else {
+            // Frame 1: prize removed, score hidden
+            // Frame 2..8: rise 1px/frame (up to 7px total shift)
+            // Frame 8..120: hold position (-7px shift)
+            if (pa->anim_frame >= 2) {
+                uint8_t rise_px = (pa->anim_frame <= 8) ? (pa->anim_frame - 1) : 7;
+                int16_t pm_drawn_x = pa->pacman_world_x + maze_dx - 3;
+                int16_t pm_drawn_y = (pa->pacman_world_y - 3) - rise_px;
+
+                for (int d = 0; d < 4; d++) {
+                    unsigned score_config = GHOST_SCORE_CONFIG + ((slot_offset + d) * sizeof(vga_mode5_sprite_t));
+                    int16_t digit_x = pm_drawn_x + PRIZE_DIGIT_X_OFFSETS[d];
+                    int16_t digit_y = pm_drawn_y;
+
+                    xram0_struct_set(score_config, vga_mode5_sprite_t, x_pos_px, digit_x);
+                    xram0_struct_set(score_config, vga_mode5_sprite_t, y_pos_px, digit_y);
+                    xram0_struct_set(score_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (pa->digits[d] * SPRITE_FRAME_SIZE)));
+                }
+            } else {
+                // Frame 1: park sprites off-screen
+                for (int d = 0; d < 4; d++) {
+                    unsigned score_config = GHOST_SCORE_CONFIG + ((slot_offset + d) * sizeof(vga_mode5_sprite_t));
+                    xram0_struct_set(score_config, vga_mode5_sprite_t, x_pos_px, -32);
+                    xram0_struct_set(score_config, vga_mode5_sprite_t, y_pos_px, -32);
+                    xram0_struct_set(score_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+                }
+            }
+
+            pa->anim_frame++;
+            if (pa->anim_frame > 120) {
+                pa->active = false;
+            }
         }
     }
 }

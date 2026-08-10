@@ -304,6 +304,7 @@ void check_and_eat_prize(int16_t drawn_world_x, int16_t drawn_world_y) {
             uint16_t pts = get_prize_points(left_prize_sprite);
             player.score += pts;
             update_player_score_display(player.score);
+            trigger_prize_score_animation(0, pts);
 
             prizes[0].frame = 48; // Blank sprite
             prizes[0].sparkle_frame = 48;
@@ -337,6 +338,7 @@ void check_and_eat_prize(int16_t drawn_world_x, int16_t drawn_world_y) {
             uint16_t pts = get_prize_points(right_prize_sprite);
             player.score += pts;
             update_player_score_display(player.score);
+            trigger_prize_score_animation(1, pts);
 
             prizes[1].frame = 48; // Blank sprite
             prizes[1].sparkle_frame = 48;

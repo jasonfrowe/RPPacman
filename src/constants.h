@@ -15,7 +15,7 @@
 #define NPRIZES 2                                   // Number of prizes in the game
 #define NMAZE_MUNCHERS 12                           // Number of maze transition munchers 
 #define NSPARKLES 6                                 // Number of sparkle frames for prize animation 
-#define NGHOST_SCORE_DISPLAYS 4                    // 1 score display of 4 digits (4 bytes)
+#define NGHOST_SCORE_DISPLAYS 12                   // 3 score displays of 4 digits (12 slots: slot 0 for eaten ghost, slots 1-2 for eaten prizes)
 
 // Sprite data configuration
 #define SPRITE_DATA_START       0x0000U             // Starting address in XRAM for sprite data
