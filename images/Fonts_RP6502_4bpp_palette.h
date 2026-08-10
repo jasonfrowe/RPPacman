@@ -19,7 +19,7 @@ static const uint16_t fonts_rp6502_4bpp[16] = {
     0xAD75,
     0xFCB2,
     0x9779,
-    0x973C,
+    0x05F7,
     0xFFFF,
 };
 

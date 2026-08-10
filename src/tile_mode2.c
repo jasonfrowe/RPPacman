@@ -13,10 +13,10 @@ const uint8_t first_line_data[TEXT_MAP_WIDTH] = {
     54,46,46,0,0,8,9,0,46,46,46,46,46,46,46,0,0,0,0,0
 };
 
-// Define the data for the last line (Row 14)
+// Define the data for the last line (Row 13)
 const uint8_t last_line_data[TEXT_MAP_WIDTH] = {
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-    0,0,0,0,0,0,0,0,0,0,0,0,53,46,39,0,0,0,0,0
+    0,0,0,0,0,0,0,0,0,0,55,56,53,46,39,0,0,0,0,0
 };
 
 int16_t maze_dx = -28; // Center maze horizontally (320px - 47 tiles * 8px) / 2 = 28px
@@ -61,9 +61,9 @@ void init_tilemap_edges(void) {
         RIA.rw0 = first_line_data[i];
     }
 
-    // --- Write the LAST line (Row 14) ---
-    // Calculate the start address of the last row: Base + ((Height - 1) * Width)
-    RIA.addr0 = TEXT_MAP_DATA + ((TEXT_MAP_HEIGHT - 1) * TEXT_MAP_WIDTH); 
+    // --- Write the LAST line (Row 13) ---
+    // Calculate the start address of Row 13: Base + ((Height - 2) * Width)
+    RIA.addr0 = TEXT_MAP_DATA + ((TEXT_MAP_HEIGHT - 2) * TEXT_MAP_WIDTH); 
     RIA.step0 = 1;
     for (int i = 0; i < TEXT_MAP_WIDTH; i++) {
         RIA.rw0 = last_line_data[i];
@@ -97,7 +97,7 @@ void tile_mode2_text_map_init(void) {
     // OPTIONS: bit3=1 (16x16 tiles), bit[2:0]=2 (8-bit color index) 
     // bit[4:7]=1000 (trim 8 pixels x) bit[8:11]=0000 (no trim y ) => 0b0000 1000 1010 = 0x08A
     // Plane 1 = text overlay layer (top 28 scanlines only: BEGIN=0, END=28)
-    if (xreg_vga_mode(2, 0x08A, TEXT_MAP_CONFIG, 1, 0, 28) < 0) {
+    if (xreg_vga_mode(2, 0x08A, TEXT_MAP_CONFIG, 1, 0, 0) < 0) {
         return;
     }
 

@@ -35,7 +35,7 @@
 #define SPRITE_FRAME_SIZE       0x0080U             // 128 bytes per 16x16 4bpp frame
 
 #define FONT_TILES_DATA        (SPRITE_DATA + SPRITE_DATA_SIZE) // Address for font data
-#define FONT_TILES_DATA_SIZE   (0x1B80U)            // Size of font data (6912 bytes)
+#define FONT_TILES_DATA_SIZE   (0x1C80U)            // Size of font data (7296 bytes)
 
 #define TEXT_MAP_DATA          (FONT_TILES_DATA + FONT_TILES_DATA_SIZE) // Address for text map data
 #define TEXT_MAP_DATA_SIZE     (0x0258U)            // Size of text map data (1200 bytes, 40x15 characters)

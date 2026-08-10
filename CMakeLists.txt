@@ -14,8 +14,8 @@ rp6502_asset(RPPacMan 0x10000 images/Maze_tiles_4bpp.bin)
 rp6502_asset(RPPacMan 0x11000 images/Maze_map.bin)
 rp6502_asset(RPPacMan 0x11582 images/Sprites_RP6502_4bpp.bin)
 rp6502_asset(RPPacMan 0x15002 images/Fonts_RP6502_4bpp.bin)
-rp6502_asset(RPPacMan 0x16B82 images/Text_map.bin)
-rp6502_asset(RPPacMan 0x16DDA images/R_Mazes.bin)
+rp6502_asset(RPPacMan 0x16C82 images/Text_map.bin)
+rp6502_asset(RPPacMan 0x16EDA images/R_Mazes.bin)
 
 rp6502_executable(RPPacMan DATA file RESET file)
 target_sources(RPPacMan PRIVATE

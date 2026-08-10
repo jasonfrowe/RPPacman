@@ -39,7 +39,7 @@ static const uint16_t font_palette[16] = {
     0xAD75,
     0xFCB2,
     0x9779,
-    0x973C,
+    0x05F7,
     0xFFFF,
 };
 
