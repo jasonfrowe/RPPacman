@@ -298,17 +298,18 @@ static void update_ghost_outside_movement(int ghost_index) {
     ghost_struct *g = &ghosts[ghost_index];
 
     uint8_t speed_lvl = get_speed_level_index();
-    uint16_t speed_fp = SPEED_TABLE[speed_lvl]; // Full normal level speed for ghosts in normal CHASE mode
+    uint16_t base_speed_fp = SPEED_TABLE[speed_lvl];
+    uint16_t speed_fp = (base_speed_fp * 7) / 8; // Normal chase mode ghosts move at 7/8ths (87.5%) of Pac-Man's level speed
 
     if (g->mode == GHOST_MODE_FRIGHTENED) {
-        // Vulnerable ghosts move at 0.25x speed (1/4 of normal speed)
-        speed_fp = speed_fp >> 2;
+        // Vulnerable ghosts move at 0.25x speed (1/4 of level speed)
+        speed_fp = base_speed_fp >> 2;
     } else if (g->mode == GHOST_MODE_EATEN) {
         // Eaten eyes move at 2.0x speed to return home quickly
-        speed_fp = speed_fp * 2;
+        speed_fp = base_speed_fp * 2;
     } else if (ghost_index == 0) {
         // Blinky Cruise Elroy speed boost (+5% speed while chasing)
-        speed_fp += (speed_fp >> 4);
+        speed_fp += (base_speed_fp >> 4);
     }
 
     int8_t dx, dy;
