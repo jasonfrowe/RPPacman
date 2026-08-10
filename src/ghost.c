@@ -274,8 +274,7 @@ void check_pacman_ghost_collisions(void) {
                 else if (s_ghosts_eaten_chain == 7) pts = 2800;
                 else                                pts = 3200;
 
-                player.score += pts;
-                update_player_score_display(player.score);
+                add_player_score(pts);
 
                 // Set 30-frame pause for all motion & trigger eat animation
                 s_eat_pause_timer = 30;
@@ -566,8 +565,12 @@ void ghost_update_motion(void) {
             xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (player.frame * SPRITE_FRAME_SIZE)));
         } else if (t <= 206) {
             // Phase 4 (172..206): Use blank frame (48) for 35 frames.
-            // At frame 172, reset ghosts to initial home positions and start up-and-down motion!
+            // At frame 172, remove 1 life from Pac-Man, reset ghosts to initial home positions and start up-and-down motion!
             if (t == 172) {
+                if (player.lives > 0) {
+                    player.lives--;
+                }
+                update_player_lives_display(player.lives);
                 reset_ghosts_to_initial_positions();
             }
             player.frame = 48; // Blank frame

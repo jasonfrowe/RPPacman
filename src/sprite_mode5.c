@@ -31,6 +31,7 @@ void sprite_mode5_init(void) {
     player.y_pos_px = player.world_py - 3; // Visual offset to restore 165px plotted position
     player.score = 0;
     player.pellets_eaten = 0;
+    player.lives = 3;
 
     player.frame = 5; // Start with the "facing left / closed" frame for the player sprite
 

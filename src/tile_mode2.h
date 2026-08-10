@@ -49,6 +49,9 @@ extern int16_t maze_dx;
 extern int8_t maze_d1; // Change in maze_dx for this frame, used to adjust ghost positions
 
 void update_player_score_display(uint32_t score);
+void update_player_lives_display(uint8_t lives);
+void trigger_extra_life_blink(void);
+void update_lives_blink_animation(void);
 
 extern void tile_mode2_palette_update(uint8_t frame);
 

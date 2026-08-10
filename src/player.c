@@ -132,6 +132,20 @@ static void update_score_popups(void) {
     }
 }
 
+static uint32_t s_next_extra_life_threshold = 20000;
+
+void add_player_score(uint32_t pts) {
+    player.score += pts;
+    update_player_score_display(player.score);
+
+    while (player.score >= s_next_extra_life_threshold) {
+        player.lives++;
+        update_player_lives_display(player.lives);
+        trigger_extra_life_blink();
+        s_next_extra_life_threshold += 20000;
+    }
+}
+
 static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
     // Check center of visual sprite (drawn_x + 8, drawn_y + 8) => (world_x + 5, world_y + 5)
     int16_t check_x = world_x + 5;
@@ -163,10 +177,8 @@ static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
         RIA.rw0 = 0;
 
         uint32_t dot_pts = get_current_dot_value(player.pellets_eaten);
-        player.score += dot_pts;
         player.pellets_eaten++;
-
-        update_player_score_display(player.score);
+        add_player_score(dot_pts);
 
         uint8_t score_tile = get_score_tile_index(dot_pts);
         push_score_popup(tile_x, tile_y, score_tile);

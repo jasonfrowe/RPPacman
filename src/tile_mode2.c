@@ -140,3 +140,108 @@ void update_player_score_display(uint32_t score) {
         RIA.rw0 = digits[i];
     }
 }
+
+// Player Lives display management on Row 13 of TEXT_MAP_DATA
+// Indices 32 ('x', tile index 53), 33 ('0', tens digit tile index 46), and 34 (ones lives digit tile index 37..46)
+static uint8_t s_current_lives = 3;
+static uint16_t s_lives_blink_timer = 0; // Total 128 frames for 8 blinks (16 frames per blink: 8 off, 8 on)
+
+void update_player_lives_display(uint8_t lives) {
+    s_current_lives = lives;
+    static const uint8_t digit_tile_map[10] = {
+        46, 37, 38, 39, 40, 41, 42, 43, 44, 45
+    };
+
+    uint8_t ones_tile = (lives <= 9) ? digit_tile_map[lives] : 45; // Cap at 9 digit tile
+
+    // Row 13 base address: TEXT_MAP_DATA + (13 * 40) = TEXT_MAP_DATA + 520
+    uint16_t row13_addr = TEXT_MAP_DATA + (13 * TEXT_MAP_WIDTH);
+
+    RIA.addr0 = row13_addr + 32; // Index 32 -> 'x' (tile 53)
+    RIA.step0 = 1;
+    RIA.rw0 = 53;
+
+    RIA.addr0 = row13_addr + 33; // Index 33 -> Tens digit '0' (tile 46)
+    RIA.step0 = 1;
+    RIA.rw0 = 46;
+
+    RIA.addr0 = row13_addr + 34; // Index 34 -> Ones lives digit
+    RIA.step0 = 1;
+    RIA.rw0 = ones_tile;
+}
+
+void trigger_extra_life_blink(void) {
+    // 8 blinks: each blink has 8 frames off, 8 frames on => 16 frames per blink * 8 = 128 frames total
+    // Step 1: Blank out 'x', '0', and number of lives on frame 1
+    uint16_t row13_addr = TEXT_MAP_DATA + (13 * TEXT_MAP_WIDTH);
+    RIA.addr0 = row13_addr + 32; // Index 32 ('x')
+    RIA.step0 = 1;
+    RIA.rw0 = 0; // Blank tile 0
+
+    RIA.addr0 = row13_addr + 33; // Index 33 ('0')
+    RIA.step0 = 1;
+    RIA.rw0 = 0; // Blank tile 0
+
+    RIA.addr0 = row13_addr + 34; // Index 34 (lives digit)
+    RIA.step0 = 1;
+    RIA.rw0 = 0; // Blank tile 0
+
+    s_lives_blink_timer = 128; // Start 128-frame blink sequence
+}
+
+void update_lives_blink_animation(void) {
+    if (s_lives_blink_timer == 0) return;
+
+    s_lives_blink_timer--;
+
+    uint16_t row13_addr = TEXT_MAP_DATA + (13 * TEXT_MAP_WIDTH);
+    static const uint8_t digit_tile_map[10] = {
+        46, 37, 38, 39, 40, 41, 42, 43, 44, 45
+    };
+    uint8_t ones_tile = (s_current_lives <= 9) ? digit_tile_map[s_current_lives] : 45;
+
+    if (s_lives_blink_timer == 127) {
+        // Frame 2 (frame 127 counting down): Put 'x', '0', and new number of lives back
+        RIA.addr0 = row13_addr + 32;
+        RIA.step0 = 1;
+        RIA.rw0 = 53;
+
+        RIA.addr0 = row13_addr + 33;
+        RIA.step0 = 1;
+        RIA.rw0 = 46;
+
+        RIA.addr0 = row13_addr + 34;
+        RIA.step0 = 1;
+        RIA.rw0 = ones_tile;
+    } else if (s_lives_blink_timer > 0) {
+        // Blink remaining frames: 16 frames per cycle (8 off, 8 on)
+        // (s_lives_blink_timer % 16) < 8 -> OFF (blank 0), >= 8 -> ON (show tiles)
+        uint8_t cycle_step = s_lives_blink_timer % 16;
+        bool show_visible = (cycle_step >= 8);
+
+        RIA.addr0 = row13_addr + 32;
+        RIA.step0 = 1;
+        RIA.rw0 = show_visible ? 53 : 0;
+
+        RIA.addr0 = row13_addr + 33;
+        RIA.step0 = 1;
+        RIA.rw0 = show_visible ? 46 : 0;
+
+        RIA.addr0 = row13_addr + 34;
+        RIA.step0 = 1;
+        RIA.rw0 = show_visible ? ones_tile : 0;
+    } else {
+        // Blink sequence complete (timer == 0): ensure final state is visible ON
+        RIA.addr0 = row13_addr + 32;
+        RIA.step0 = 1;
+        RIA.rw0 = 53;
+
+        RIA.addr0 = row13_addr + 33;
+        RIA.step0 = 1;
+        RIA.rw0 = 46;
+
+        RIA.addr0 = row13_addr + 34;
+        RIA.step0 = 1;
+        RIA.rw0 = ones_tile;
+    }
+}
