@@ -46,8 +46,37 @@ static uint16_t s_exit_delay_timer = 0;
 static bool s_game_motion_started = false;
 static uint8_t s_eat_pause_timer = 0; // Freeze movement during 30-frame eat animation pause
 
+// Pac-Man death animation state tracking (Total: 305 frames)
+// Phase 1 (1..40): Pause 40 frames
+// Phase 2 (41..51): Clear ghosts, Pac-Man sprite frame 0 for 11 frames
+// Phase 3 (52..171): Death rotation frames 71..80 (10 frames x 12 frames each = 120 frames)
+// Phase 4 (172..206): Blank frame 48 for 35 frames (Ghosts reset to home & start bouncing)
+// Phase 5 (207..305): 6 radial bouncing balls for 99 frames (3 bounces)
+// End (306): Remove balls, restore Pac-Man facing last dir, allow spawn & movement
+static uint16_t s_death_seq_timer = 0;
+static int8_t s_death_last_dir = DIR_LEFT;
+
+// Power Pellet Frightened State Tracking
+static uint16_t s_frightened_timer = 0;
+static uint16_t s_frightened_max_duration = 0;
+static uint16_t s_ghosts_eaten_chain = 0; // Continuous combo counter across Power Pellets!
+
 bool is_eat_pause_active(void) {
     return s_eat_pause_timer > 0;
+}
+
+bool is_death_sequence_active(void) {
+    return s_death_seq_timer > 0;
+}
+
+void start_pacman_death_sequence(void) {
+    if (s_death_seq_timer == 0) {
+        s_death_seq_timer = 1;
+        s_death_last_dir = (player.dir != DIR_NONE) ? player.dir : DIR_LEFT;
+        s_ghosts_eaten_chain = 0;   // Reset scared ghost combo chain on death
+        s_frightened_timer = 0;     // Cancel active frightened power pellet state on death
+        reset_player_on_death();    // Reset Pac-Dots eaten multiplier tier back to 10 points (0-59 dots)
+    }
 }
 
 // Sparkle offsets relative to Pac-Man's drawn position for frames 1..10
@@ -148,11 +177,6 @@ void trigger_eaten_ghost_animation(uint8_t ghost_index, uint32_t pts) {
     sa->digits[3] = (ones == 0) ? 116 : (106 + ones);
 }
 
-// Power Pellet Frightened State Tracking
-static uint16_t s_frightened_timer = 0;
-static uint16_t s_frightened_max_duration = 0;
-static uint16_t s_ghosts_eaten_chain = 0; // Continuous combo counter across Power Pellets!
-
 // Level-scaled Power Pellet total durations in 60 FPS frames (Level 0 Cherry: 600 frames / 10.0s -> Level 21 Crown: 240 frames / 4.0s)
 static const uint16_t FRIGHTENED_DURATION_TABLE[22] = {
     600, 583, 566, 549, 531, 514, 497, 480, 463, 446,
@@ -197,15 +221,14 @@ void check_pacman_ghost_collisions(void) {
     for (int i = 0; i < NGHOSTS; i++) {
         ghost_struct *g = &ghosts[i];
         
-        // Ghost must be active (outside or just reached tile 23,12) and in FRIGHTENED mode
-        if (g->mode == GHOST_MODE_FRIGHTENED && g->state == GHOST_STATE_OUTSIDE) {
-            int16_t ghost_center_x = g->world_px + 8;
-            int16_t ghost_center_y = g->world_py + 8;
+        int16_t ghost_center_x = g->world_px + 8;
+        int16_t ghost_center_y = g->world_py + 8;
 
-            int16_t dx = pm_center_x - ghost_center_x;
-            int16_t dy = pm_center_y - ghost_center_y;
+        int16_t dx = pm_center_x - ghost_center_x;
+        int16_t dy = pm_center_y - ghost_center_y;
 
-            if (dx >= -6 && dx <= 6 && dy >= -6 && dy <= 6) {
+        if (dx >= -6 && dx <= 6 && dy >= -6 && dy <= 6) {
+            if (g->mode == GHOST_MODE_FRIGHTENED && g->state == GHOST_STATE_OUTSIDE) {
                 // Pac-Man eats the frightened ghost!
                 g->mode = GHOST_MODE_EATEN;
                 s_ghosts_eaten_chain++;
@@ -228,6 +251,10 @@ void check_pacman_ghost_collisions(void) {
                 // Set 30-frame pause for all motion & trigger eat animation
                 s_eat_pause_timer = 30;
                 trigger_eaten_ghost_animation(i, pts);
+            } else if (g->mode == GHOST_MODE_CHASE && g->state == GHOST_STATE_OUTSIDE) {
+                // Normal ghost catches Pac-Man! Trigger Pac-Man death sequence
+                start_pacman_death_sequence();
+                break;
             }
         }
     }
@@ -459,7 +486,6 @@ void check_and_reset_stuck_ghosts(void) {
             g->state = GHOST_STATE_HOME_BOUNCE;
             g->dir = DIR_UP;
 
-            // Enqueue ghost into return queue so it exits home sequentially
             bool already_queued = false;
             for (uint8_t f = 0; f < s_fifo_count; f++) {
                 if (s_fifo_queue[f] == i) {
@@ -474,7 +500,199 @@ void check_and_reset_stuck_ghosts(void) {
     }
 }
 
+void reset_ghosts_to_initial_positions(void) {
+    init_ghost_data();
+    s_initial_exit_idx = 0;
+    s_fifo_count = 0;
+    for (int i = 0; i < 4; i++) {
+        s_fifo_queue[i] = -1;
+    }
+}
+
 void ghost_update_motion(void) {
+    if (s_death_seq_timer > 0) {
+        // --- Pac-Man Death Animation Sequence (Total 305 frames) ---
+        uint16_t t = s_death_seq_timer;
+        s_death_seq_timer++;
+
+        if (t <= 40) {
+            // Phase 1 (1..40): Pause all movement of ghosts, Pac-Man, and animations for 40 frames.
+            // Ghosts stay at current positions.
+        } else if (t <= 51) {
+            // Phase 2 (41..51): Clear ghosts off-screen (-32, -32), set Pac-Man to frame 0 (facing UP) for 11 frames.
+            for (int i = 0; i < NGHOSTS; i++) {
+                ghosts[i].x_pos_px = -32;
+                ghosts[i].y_pos_px = -32;
+                unsigned current_ghost_config = GHOST_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+                xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, x_pos_px, -32);
+                xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, y_pos_px, -32);
+            }
+            player.frame = 0; // Facing UP
+            xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (0 * SPRITE_FRAME_SIZE)));
+        } else if (t <= 171) {
+            // Phase 3 (52..171): Death animation frames 71 to 80 (10 frames x 12 frames each = 120 frames).
+            uint16_t anim_step = (t - 52) / 12; // 0..9
+            if (anim_step > 9) anim_step = 9;
+            player.frame = 71 + anim_step;
+            xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (player.frame * SPRITE_FRAME_SIZE)));
+        } else if (t <= 206) {
+            // Phase 4 (172..206): Use blank frame (48) for 35 frames.
+            // At frame 172, reset ghosts to initial home positions and start up-and-down motion!
+            if (t == 172) {
+                reset_ghosts_to_initial_positions();
+            }
+            player.frame = 48; // Blank frame
+            xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+
+            // Ghosts begin their up-and-down bounce in home
+            for (int i = 0; i < NGHOSTS; i++) {
+                ghost_struct *g = &ghosts[i];
+                if (g->state == GHOST_STATE_HOME_BOUNCE) {
+                    uint8_t speed_lvl = get_speed_level_index();
+                    uint16_t home_speed_fp = (SPEED_TABLE[speed_lvl] * 85) / 100;
+                    uint16_t move_px = 0;
+                    if (g->dir == DIR_DOWN) {
+                        g->sub_py += home_speed_fp;
+                        move_px = g->sub_py >> 8;
+                        g->sub_py &= 0x00FF;
+                        for (uint16_t step = 0; step < move_px; step++) {
+                            g->world_py++;
+                            if (g->world_py >= g->max_home_py) {
+                                g->world_py = g->max_home_py;
+                                g->dir = DIR_UP;
+                                break;
+                            }
+                        }
+                    } else if (g->dir == DIR_UP) {
+                        g->sub_py += home_speed_fp;
+                        move_px = g->sub_py >> 8;
+                        g->sub_py &= 0x00FF;
+                        for (uint16_t step = 0; step < move_px; step++) {
+                            g->world_py--;
+                            if (g->world_py <= g->min_home_py) {
+                                g->world_py = g->min_home_py;
+                                g->dir = DIR_DOWN;
+                                break;
+                            }
+                        }
+                    }
+                    g->x_pos_px = g->world_px + maze_dx - 3;
+                    g->y_pos_px = g->world_py - 3;
+                    unsigned current_ghost_config = GHOST_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+                    xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, x_pos_px, g->x_pos_px);
+                    xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, y_pos_px, g->y_pos_px);
+                    xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (g->frame * SPRITE_FRAME_SIZE)));
+                }
+            }
+        } else if (t <= 305) {
+            // Phase 5 (207..305): 6 balls (sprite index 106) perform 3 radial bounces over 99 frames.
+            // Pac-Man remains blank tile 48.
+            player.frame = 48;
+            xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+
+            uint16_t b_frame = t - 207; // 0..98
+            int16_t pm_drawn_x = player.world_px + maze_dx - 3;
+            int16_t pm_drawn_y = player.world_py - 3;
+
+            // 3 bounce cycles of 33 frames each (0..32, 33..65, 66..98)
+            uint16_t cycle = b_frame / 33; // 0, 1, 2
+            uint16_t sub = b_frame % 33;   // 0..32
+
+            // Amplitudes: Bounce 1: 24px, Bounce 2: 12px, Bounce 3: 4px
+            int16_t max_amp = (cycle == 0) ? 24 : ((cycle == 1) ? 12 : 4);
+            // Parabola: r = max_amp * sin(sub * pi / 32) approximated via quadratic parabola 4*x*(32-x)/1024
+            int32_t height = (4 * (int32_t)sub * (32 - (int32_t)sub) * max_amp) / 1024;
+
+            // 6 radial directions equally spaced by 60 degrees (0, 60, 120, 180, 240, 300 deg)
+            // cos/sin ratios scaled by 256:
+            // 0 deg:   cos=256, sin=0
+            // 60 deg:  cos=128, sin=221
+            // 120 deg: cos=-128, sin=221
+            // 180 deg: cos=-256, sin=0
+            // 240 deg: cos=-128, sin=-221
+            // 300 deg: cos=128, sin=-221
+            static const int16_t RADIAL_COS[6] = { 256, 128, -128, -256, -128, 128 };
+            static const int16_t RADIAL_SIN[6] = { 0, 221, 221, 0, -221, -221 };
+
+            for (int k = 0; k < NSPARKLES; k++) {
+                unsigned ball_config = PRIZE_SPARKLE_CONFIG + (k * sizeof(vga_mode5_sprite_t));
+                int16_t bx = pm_drawn_x + (int16_t)((height * RADIAL_COS[k]) / 256);
+                int16_t by = pm_drawn_y - (int16_t)((height * RADIAL_SIN[k]) / 256);
+
+                xram0_struct_set(ball_config, vga_mode5_sprite_t, x_pos_px, bx);
+                xram0_struct_set(ball_config, vga_mode5_sprite_t, y_pos_px, by);
+                xram0_struct_set(ball_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (106 * SPRITE_FRAME_SIZE))); // Sprite index 106
+            }
+
+            // Ghosts continue bouncing in home
+            for (int i = 0; i < NGHOSTS; i++) {
+                ghost_struct *g = &ghosts[i];
+                if (g->state == GHOST_STATE_HOME_BOUNCE) {
+                    uint8_t speed_lvl = get_speed_level_index();
+                    uint16_t home_speed_fp = (SPEED_TABLE[speed_lvl] * 85) / 100;
+                    uint16_t move_px = 0;
+                    if (g->dir == DIR_DOWN) {
+                        g->sub_py += home_speed_fp;
+                        move_px = g->sub_py >> 8;
+                        g->sub_py &= 0x00FF;
+                        for (uint16_t step = 0; step < move_px; step++) {
+                            g->world_py++;
+                            if (g->world_py >= g->max_home_py) {
+                                g->world_py = g->max_home_py;
+                                g->dir = DIR_UP;
+                                break;
+                            }
+                        }
+                    } else if (g->dir == DIR_UP) {
+                        g->sub_py += home_speed_fp;
+                        move_px = g->sub_py >> 8;
+                        g->sub_py &= 0x00FF;
+                        for (uint16_t step = 0; step < move_px; step++) {
+                            g->world_py--;
+                            if (g->world_py <= g->min_home_py) {
+                                g->world_py = g->min_home_py;
+                                g->dir = DIR_DOWN;
+                                break;
+                            }
+                        }
+                    }
+                    g->x_pos_px = g->world_px + maze_dx - 3;
+                    g->y_pos_px = g->world_py - 3;
+                    unsigned current_ghost_config = GHOST_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+                    xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, x_pos_px, g->x_pos_px);
+                    xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, y_pos_px, g->y_pos_px);
+                    xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (g->frame * SPRITE_FRAME_SIZE)));
+                }
+            }
+        } else {
+            // End of death sequence (frame 306)!
+            s_death_seq_timer = 0;
+            s_game_motion_started = true;
+
+            // Remove 6 radial balls off-screen
+            for (int k = 0; k < NSPARKLES; k++) {
+                unsigned ball_config = PRIZE_SPARKLE_CONFIG + (k * sizeof(vga_mode5_sprite_t));
+                xram0_struct_set(ball_config, vga_mode5_sprite_t, x_pos_px, -32);
+                xram0_struct_set(ball_config, vga_mode5_sprite_t, y_pos_px, -32);
+                xram0_struct_set(ball_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+            }
+
+            // Restore Pac-Man facing last direction
+            player.dir = s_death_last_dir;
+            uint8_t open_frame = 5;
+            switch (player.dir) {
+                case DIR_UP:    open_frame = 0; break;
+                case DIR_DOWN:  open_frame = 2; break;
+                case DIR_LEFT:  open_frame = 4; break;
+                case DIR_RIGHT: open_frame = 6; break;
+            }
+            player.frame = open_frame;
+            xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (player.frame * SPRITE_FRAME_SIZE)));
+        }
+
+        return;
+    }
+
     if (s_eat_pause_timer > 0) {
         s_eat_pause_timer--;
         // Bypass movement and collision updates during pause, but continue to section 3 to render sparkles & scores!
