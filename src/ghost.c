@@ -823,6 +823,8 @@ void ghost_update_motion(void) {
                     g->state = GHOST_STATE_HOME_BOUNCE;
                     g->dir = DIR_UP;
                     g->bounce_dist_px = 0; // Reset 80px cooldown tracker
+                    g->sub_px = 0;
+                    g->sub_py = 0;
 
                     // Enqueue ghost into FIFO return queue if not already queued
                     bool already_queued = false;
