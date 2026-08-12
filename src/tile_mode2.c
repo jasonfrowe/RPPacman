@@ -144,15 +144,21 @@ void write_text_to_text_map(uint8_t tx, uint8_t ty, const char *str) {
         uint8_t tile_idx = 0;
         if (c >= 'A' && c <= 'Z') {
             tile_idx = 1 + (c - 'A'); // A=1 .. Z=26
-        } else if (c >= '0' && c <= '9') {
-            static const uint8_t digit_tile_map[10] = { 46, 37, 38, 39, 40, 41, 42, 43, 44, 45 };
-            tile_idx = digit_tile_map[c - '0'];
+        } else if (c >= '1' && c <= '9') {
+            tile_idx = 37 + (c - '1'); // 1=37 .. 9=45
+        } else if (c == '0') {
+            tile_idx = 46; // 0=46
+        } else if (c == ' ') {
+            tile_idx = 0; // blank
         }
         RIA.rw0 = tile_idx;
     }
 }
 
+static bool s_maze_palette_black = false;
+
 void set_maze_palette_black(void) {
+    s_maze_palette_black = true;
     RIA.addr0 = MAZE_PALETTE_ADDR;
     RIA.step0 = 1;
     for (int i = 0; i < 16; i++) {
@@ -162,6 +168,7 @@ void set_maze_palette_black(void) {
 }
 
 void restore_maze_palette(void) {
+    s_maze_palette_black = false;
     RIA.addr0 = MAZE_PALETTE_ADDR;
     RIA.step0 = 1;
     for (int i = 0; i < 16; i++) {
@@ -189,6 +196,7 @@ void restore_title_palette(void) {
 }
 
 void tile_mode2_palette_update(uint8_t frame){
+    if (s_maze_palette_black) return;
 
     // 2 Hz cadence at 60 FPS: toggle every 15 frames (30 frames for a full cycle)
     int color_index = ((frame % 30) < 15) ? 5 : 1;

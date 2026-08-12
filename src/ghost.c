@@ -738,8 +738,10 @@ void ghost_update_motion(void) {
             } else {
                 s_game_motion_started = true;
 
-                // Restore Pac-Man facing last direction
+                // Restore Pac-Man facing and moving in the last direction before death
                 player.dir = s_death_last_dir;
+                clear_player_queued_dir();
+
                 uint8_t open_frame = 5;
                 switch (player.dir) {
                     case DIR_UP:    open_frame = 0; break;

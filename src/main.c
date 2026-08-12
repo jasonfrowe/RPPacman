@@ -37,18 +37,19 @@ void start_title_screen(void) {
     set_maze_palette_black();
     restore_title_palette();
 
-    // 2. Hide ghost sprites
+    // 2. Hide ghost sprites & reset/hide all prize sprites and munchers
     hide_all_ghosts();
+    reset_prizes_and_mazes_level();
 
-    // 3. Write menu text to TEXT_MAP_CONFIG
+    // 3. Write menu and header text to TEXT_MAP_CONFIG
+    write_text_to_text_map(12, 6,  "PICOCOMPUTER 6502");
     write_text_to_text_map(17, 8,  "NORMAL");
     write_text_to_text_map(17, 9,  "EXTRAS");
     write_text_to_text_map(17, 10, "OPTION");
 
-    // 4. Position Pac-Man sprite to the left of "NORMAL" (at (17-2, 8) => (15*16-3, 8*16-3) => (237, 125))
-    // Tile 15 * 16px - 3px = 237px, Tile 8 * 16px - 3px = 125px
-    int16_t cursor_x = 15 * 16 - 3;
-    int16_t cursor_y = (8 + s_menu_selection) * 16 - 3;
+    // 4. Position Pac-Man sprite to the left of "NORMAL" (117px, y offset +1)
+    int16_t cursor_x = 117;
+    int16_t cursor_y = (8 + s_menu_selection) * 16 + 1;
 
     player.x_pos_px = cursor_x;
     player.y_pos_px = cursor_y;
@@ -65,6 +66,7 @@ void start_normal_game(void) {
     s_game_state = STATE_GAMEPLAY;
 
     // 1. Clear menu text from TEXT_MAP_CONFIG & hide title screen (set TITLE_PALETTE_ADDR to all black 0x0000)
+    write_text_to_text_map(12, 6,  "                 ");
     write_text_to_text_map(17, 8,  "      ");
     write_text_to_text_map(17, 9,  "      ");
     write_text_to_text_map(17, 10, "      ");
@@ -86,6 +88,7 @@ void start_normal_game(void) {
     player.pellets_eaten = 0;
     player.lives = 3;
     player.dir = DIR_NONE;
+    clear_player_queued_dir();
     player.frame = 5; // Facing left / closed
 
     update_player_score_display(player.score);
@@ -184,9 +187,9 @@ int main(void)
                     s_pacman_anim_frame = (s_pacman_anim_frame == 6) ? 7 : 6;
                 }
 
-                // Position Pac-Man cursor to the left of the selected menu item
-                player.x_pos_px = 15 * 16 - 3;
-                player.y_pos_px = (8 + s_menu_selection) * 16 - 3;
+                // Position Pac-Man cursor to the left of the selected menu item (117px, y offset +1)
+                player.x_pos_px = 117;
+                player.y_pos_px = (8 + s_menu_selection) * 16 + 1;
                 player.frame = s_pacman_anim_frame;
 
                 xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, x_pos_px, player.x_pos_px);

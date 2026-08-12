@@ -79,6 +79,10 @@ void reset_player_on_death(void) {
     player.pellets_eaten = 0; // Reset dot multiplier back to 10 points (0-59 dots tier)
 }
 
+void clear_player_queued_dir(void) {
+    queued_dir = DIR_NONE;
+}
+
 void push_score_popup(uint16_t tile_x, uint16_t tile_y, uint8_t score_tile) {
     // If popups queue is full (10 items), expire the oldest entry immediately to blank (tile 0)
     if (s_popup_count >= MAX_SCORE_POPUPS) {
