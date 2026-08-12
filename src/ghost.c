@@ -925,7 +925,21 @@ void ghost_update_motion(void) {
                 g->sub_py = 0;
                 g->in_house = false;
                 g->state = GHOST_STATE_OUTSIDE;
-                g->dir = DIR_LEFT;
+
+                // Evaluate target tile to choose best exit direction (DIR_LEFT vs DIR_RIGHT) towards Pac-Man / target
+                int16_t target_tx = 0, target_ty = 0;
+                if (g->mode == GHOST_MODE_FRIGHTENED) {
+                    int16_t pac_tx = (int16_t)(player.world_px / MAZE_TILES_SIZE_PX);
+                    target_tx = 23 + (23 - pac_tx);
+                } else {
+                    compute_ghost_target_tile(i, &target_tx, &target_ty);
+                }
+
+                // Tile 23 exit: test stepping left to tile 22 vs stepping right to tile 24
+                int32_t diff_left = (int32_t)(22 - target_tx);
+                int32_t diff_right = (int32_t)(24 - target_tx);
+
+                g->dir = (diff_left * diff_left <= diff_right * diff_right) ? DIR_LEFT : DIR_RIGHT;
             }
         }
         else if (g->state == GHOST_STATE_OUTSIDE) {
