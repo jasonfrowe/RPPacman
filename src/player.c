@@ -79,10 +79,6 @@ void reset_player_on_death(void) {
     player.pellets_eaten = 0; // Reset dot multiplier back to 10 points (0-59 dots tier)
 }
 
-void clear_player_queued_dir(void) {
-    queued_dir = DIR_NONE;
-}
-
 void push_score_popup(uint16_t tile_x, uint16_t tile_y, uint8_t score_tile) {
     // If popups queue is full (10 items), expire the oldest entry immediately to blank (tile 0)
     if (s_popup_count >= MAX_SCORE_POPUPS) {
@@ -239,37 +235,93 @@ uint8_t get_speed_level_index(void) {
     return max_count;
 }
 
+static uint8_t s_prev_dpad_mask = 0;
+
+void clear_player_queued_dir(void) {
+    queued_dir = DIR_NONE;
+    s_prev_dpad_mask = 0;
+}
+
 void player_update_motion(const input_actions_t *actions) {
     if (is_eat_pause_active() || is_death_sequence_active()) {
         return;
     }
 
-    // 1. Buffer user direction input (support diagonal D-pad input)
-    // If holding a diagonal (e.g. up + right while moving right), prioritize the perpendicular turn direction (up).
-    int8_t new_buffered_dir = DIR_NONE;
+    // 1. Process D-pad input transitions
+    uint8_t dpad_mask = 0;
+    if (actions->up)    dpad_mask |= 1;
+    if (actions->down)  dpad_mask |= 2;
+    if (actions->left)  dpad_mask |= 4;
+    if (actions->right) dpad_mask |= 8;
 
-    if (player.dir == DIR_RIGHT || player.dir == DIR_LEFT) {
-        // Currently moving horizontally: prioritize vertical inputs if held
-        if (actions->up)        new_buffered_dir = DIR_UP;
-        else if (actions->down) new_buffered_dir = DIR_DOWN;
-        else if (actions->right) new_buffered_dir = DIR_RIGHT;
-        else if (actions->left)  new_buffered_dir = DIR_LEFT;
-    } else if (player.dir == DIR_UP || player.dir == DIR_DOWN) {
-        // Currently moving vertically: prioritize horizontal inputs if held
-        if (actions->right)     new_buffered_dir = DIR_RIGHT;
-        else if (actions->left)  new_buffered_dir = DIR_LEFT;
-        else if (actions->up)    new_buffered_dir = DIR_UP;
-        else if (actions->down)  new_buffered_dir = DIR_DOWN;
-    } else {
-        // Stationary: register any pressed D-pad direction
-        if (actions->up)         new_buffered_dir = DIR_UP;
-        else if (actions->down)  new_buffered_dir = DIR_DOWN;
-        else if (actions->right) new_buffered_dir = DIR_RIGHT;
-        else if (actions->left)  new_buffered_dir = DIR_LEFT;
+    // Only evaluate and queue a new direction when the D-pad button combination CHANGES
+    if (dpad_mask != s_prev_dpad_mask) {
+        uint8_t newly_pressed = dpad_mask & ~s_prev_dpad_mask;
+        s_prev_dpad_mask = dpad_mask;
+
+        int8_t new_dir = DIR_NONE;
+
+        if (newly_pressed != 0) {
+            // A new button (or diagonal combination) was newly pressed
+            if (player.dir == DIR_LEFT || player.dir == DIR_RIGHT) {
+                // Moving horizontally: prioritize newly pressed perpendicular (vertical) direction
+                if (newly_pressed & 1)      new_dir = DIR_UP;
+                else if (newly_pressed & 2) new_dir = DIR_DOWN;
+                else if (newly_pressed & 4) new_dir = DIR_LEFT;
+                else if (newly_pressed & 8) new_dir = DIR_RIGHT;
+            } else if (player.dir == DIR_UP || player.dir == DIR_DOWN) {
+                // Moving vertically: prioritize newly pressed perpendicular (horizontal) direction
+                if (newly_pressed & 4)      new_dir = DIR_LEFT;
+                else if (newly_pressed & 8) new_dir = DIR_RIGHT;
+                else if (newly_pressed & 1) new_dir = DIR_UP;
+                else if (newly_pressed & 2) new_dir = DIR_DOWN;
+            } else {
+                // Stationary: pick any newly pressed direction
+                if (newly_pressed & 1)      new_dir = DIR_UP;
+                else if (newly_pressed & 2) new_dir = DIR_DOWN;
+                else if (newly_pressed & 4) new_dir = DIR_LEFT;
+                else if (newly_pressed & 8) new_dir = DIR_RIGHT;
+            }
+        } else if (dpad_mask != 0) {
+            // A button was released, but other D-pad buttons remain held
+            if (player.dir == DIR_LEFT || player.dir == DIR_RIGHT) {
+                if (dpad_mask & 1)      new_dir = DIR_UP;
+                else if (dpad_mask & 2) new_dir = DIR_DOWN;
+                else if (dpad_mask & 4) new_dir = DIR_LEFT;
+                else if (dpad_mask & 8) new_dir = DIR_RIGHT;
+            } else if (player.dir == DIR_UP || player.dir == DIR_DOWN) {
+                if (dpad_mask & 4)      new_dir = DIR_LEFT;
+                else if (dpad_mask & 8) new_dir = DIR_RIGHT;
+                else if (dpad_mask & 1) new_dir = DIR_UP;
+                else if (dpad_mask & 2) new_dir = DIR_DOWN;
+            } else {
+                if (dpad_mask & 1)      new_dir = DIR_UP;
+                else if (dpad_mask & 2) new_dir = DIR_DOWN;
+                else if (dpad_mask & 4) new_dir = DIR_LEFT;
+                else if (dpad_mask & 8) new_dir = DIR_RIGHT;
+            }
+        }
+
+        if (new_dir != DIR_NONE && new_dir != player.dir) {
+            queued_dir = new_dir;
+        }
     }
 
-    if (new_buffered_dir != DIR_NONE) {
-        queued_dir = new_buffered_dir;
+    // If Pac-Man is stationary against a wall, check if any currently held D-pad direction is open
+    if (player.dir == DIR_NONE && dpad_mask != 0) {
+        if ((dpad_mask & 1) && can_step_dir(player.world_px, player.world_py, DIR_UP)) {
+            player.dir = DIR_UP;
+            queued_dir = DIR_NONE;
+        } else if ((dpad_mask & 2) && can_step_dir(player.world_px, player.world_py, DIR_DOWN)) {
+            player.dir = DIR_DOWN;
+            queued_dir = DIR_NONE;
+        } else if ((dpad_mask & 4) && can_step_dir(player.world_px, player.world_py, DIR_LEFT)) {
+            player.dir = DIR_LEFT;
+            queued_dir = DIR_NONE;
+        } else if ((dpad_mask & 8) && can_step_dir(player.world_px, player.world_py, DIR_RIGHT)) {
+            player.dir = DIR_RIGHT;
+            queued_dir = DIR_NONE;
+        }
     }
 
     // 2. Process direction change
@@ -279,22 +331,50 @@ void player_update_motion(const input_actions_t *actions) {
         // Ignore left/right inputs when Pac-Man is in vertical tunnel regions (< 32px or > 215px)
         bool is_in_vertical_tunnel = (current_drawn_y < 32) || ((current_drawn_y + SPRITE_SIZE_PX) > 215);
         if (is_in_vertical_tunnel && (queued_dir == DIR_LEFT || queued_dir == DIR_RIGHT)) {
-            queued_dir = player.dir;
+            queued_dir = DIR_NONE;
         }
 
-        // Immediate 180-degree reversal is always allowed
-        if ((player.dir == DIR_RIGHT && queued_dir == DIR_LEFT) ||
-            (player.dir == DIR_LEFT && queued_dir == DIR_RIGHT) ||
-            (player.dir == DIR_UP && queued_dir == DIR_DOWN) ||
-            (player.dir == DIR_DOWN && queued_dir == DIR_UP)) {
-            player.dir = queued_dir;
-        } else {
-            // Turning requires Pac-Man to be at an 8px grid intersection
-            bool at_intersection = (player.world_px % MAZE_TILES_SIZE_PX == 0) && 
-                                   (player.world_py % MAZE_TILES_SIZE_PX == 0);
-
-            if (at_intersection && can_step_dir(player.world_px, player.world_py, queued_dir)) {
+        if (queued_dir != DIR_NONE) {
+            // Immediate 180-degree reversal is always allowed
+            if ((player.dir == DIR_RIGHT && queued_dir == DIR_LEFT) ||
+                (player.dir == DIR_LEFT && queued_dir == DIR_RIGHT) ||
+                (player.dir == DIR_UP && queued_dir == DIR_DOWN) ||
+                (player.dir == DIR_DOWN && queued_dir == DIR_UP)) {
                 player.dir = queued_dir;
+                queued_dir = DIR_NONE;
+            } else if (player.dir == DIR_NONE) {
+                if (can_step_dir(player.world_px, player.world_py, queued_dir)) {
+                    player.dir = queued_dir;
+                    queued_dir = DIR_NONE;
+                }
+            } else {
+                // 90-degree turning with pre-turn & post-turn cornering window (within 3px of 8px tile intersection)
+                int16_t mod_x = player.world_px % MAZE_TILES_SIZE_PX;
+                if (mod_x < 0) mod_x += MAZE_TILES_SIZE_PX;
+                int16_t mod_y = player.world_py % MAZE_TILES_SIZE_PX;
+                if (mod_y < 0) mod_y += MAZE_TILES_SIZE_PX;
+
+                if ((player.dir == DIR_LEFT || player.dir == DIR_RIGHT) &&
+                    (queued_dir == DIR_UP || queued_dir == DIR_DOWN)) {
+                    if (mod_x <= 3 || mod_x >= 5) {
+                        int16_t target_grid_x = (mod_x <= 3) ? (player.world_px - mod_x) : (player.world_px + (8 - mod_x));
+                        if (can_step_dir(target_grid_x, player.world_py, queued_dir)) {
+                            player.world_px = target_grid_x;
+                            player.dir = queued_dir;
+                            queued_dir = DIR_NONE;
+                        }
+                    }
+                } else if ((player.dir == DIR_UP || player.dir == DIR_DOWN) &&
+                           (queued_dir == DIR_LEFT || queued_dir == DIR_RIGHT)) {
+                    if (mod_y <= 3 || mod_y >= 5) {
+                        int16_t target_grid_y = (mod_y <= 3) ? (player.world_py - mod_y) : (player.world_py + (8 - mod_y));
+                        if (can_step_dir(player.world_px, target_grid_y, queued_dir)) {
+                            player.world_py = target_grid_y;
+                            player.dir = queued_dir;
+                            queued_dir = DIR_NONE;
+                        }
+                    }
+                }
             }
         }
     }
@@ -327,8 +407,10 @@ void player_update_motion(const input_actions_t *actions) {
                         (player.dir == DIR_UP && queued_dir == DIR_DOWN) ||
                         (player.dir == DIR_DOWN && queued_dir == DIR_UP)) {
                         player.dir = queued_dir;
+                        queued_dir = DIR_NONE;
                     } else if (can_step_dir(player.world_px, player.world_py, queued_dir)) {
                         player.dir = queued_dir;
+                        queued_dir = DIR_NONE;
                     }
                 }
                 get_dir_offset(player.dir, &dx, &dy);
