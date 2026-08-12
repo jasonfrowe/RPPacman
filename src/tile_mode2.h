@@ -43,10 +43,37 @@ static const uint16_t font_palette[16] = {
     0xFFFF,
 };
 
+// Palette extracted from graphics/Titles_RP6502.png
+static const uint16_t titles_palette[16] = {
+    0x0000,
+    0x0020,
+    0x01A6,
+    0x036D,
+    0x05F7,
+    0xFA28,
+    0xFDAC,
+    0xFEF8,
+    0xFFFF,
+    0x1AB4,
+    0x0020,
+    0x0020,
+    0x0020,
+    0x0020,
+    0x0020,
+    0x0020,
+};
+
 void tile_mode2_init(void);
 void tile_mode2_text_map_init(void);
+void tile_mode2_title_map_init(void);
 extern int16_t maze_dx;
 extern int8_t maze_d1; // Change in maze_dx for this frame, used to adjust ghost positions
+
+void write_text_to_text_map(uint8_t tx, uint8_t ty, const char *str);
+void set_maze_palette_black(void);
+void restore_maze_palette(void);
+void set_title_palette_black(void);
+void restore_title_palette(void);
 
 void update_player_score_display(uint32_t score);
 void update_player_lives_display(uint8_t lives);

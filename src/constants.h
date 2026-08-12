@@ -45,7 +45,16 @@
 #define ALL_MAZE_MAPS_DATA     (TEXT_MAP_DATA + TEXT_MAP_DATA_SIZE) // Address for all maze maps data
 #define ALL_MAZE_MAPS_DATA_SIZE  (0x3C96U)          // Size of all maze maps data (15510 bytes, 47x30 tiles * 11 maps)
 
-#define SPRITE_DATA_END        (ALL_MAZE_MAPS_DATA + ALL_MAZE_MAPS_DATA_SIZE) // End address of sprite data
+// Title screen and menus
+#define TITLE_MAP_DATA          (ALL_MAZE_MAPS_DATA + ALL_MAZE_MAPS_DATA_SIZE) // Address for title map data
+#define TITLE_MAP_DATA_SIZE     (0x04B0U)           // Size of title map data (1200 bytes, 40x30 tiles)
+#define TITLE_MAP_WIDTH         40                  // Width of the title map in tiles
+#define TITLE_MAP_HEIGHT        30                  // Height of the title map in tiles
+
+#define TITLE_TILES_DATA        (TITLE_MAP_DATA + TITLE_MAP_DATA_SIZE) // Address for title tiles data
+#define TITLE_TILES_DATA_SIZE   (0x1480U)           // Size of title tiles data (5248 bytes, 164 tiles * 8x8 pixels * 4bpp)
+
+#define SPRITE_DATA_END        (TITLE_TILES_DATA + TITLE_TILES_DATA_SIZE) // End address of sprite data
 
 // Palette configurations
 #define MAZE_PALETTE_ADDR       0xFC00              // 16-color palette (32 bytes, 0xFC00-0xFC1F)
@@ -54,6 +63,8 @@
 #define PLAYER_PALETTE_SIZE     0x0020
 #define FONT_PALETTE_ADDR       0xFC40              // 16-color palette (32 bytes, 0xFC40-0xFC5F)
 #define FONT_PALETTE_SIZE       0x0020
+#define TITLE_PALETTE_ADDR      0xFC60              // 16-color palette (32 bytes, 0xFC60-0xFC7F)
+#define TITLE_PALETTE_SIZE      0x0020
 
 // OPL2 sound chip configuration
 #define OPL_XRAM_ADDR           0xFE00              // Native RIA OPL2 register page
@@ -68,6 +79,7 @@ extern unsigned MAZE_CONFIG;                        // Maze configuration
 extern unsigned PLAYER_CONFIG;                      // Player configuration
 extern unsigned GHOST_CONFIG;                       // Ghost configuration
 extern unsigned TEXT_MAP_CONFIG;                    // Text map configuration
+extern unsigned TITLE_MAP_CONFIG;                   // Title map configuration
 extern unsigned PRIZE_CONFIG;                       // Prize configuration
 extern unsigned PRIZE_SPARKLE_CONFIG;                // Prize sparkle configuration
 extern unsigned MAZE_MUNCHERS_CONFIG;              // Maze transition configuration

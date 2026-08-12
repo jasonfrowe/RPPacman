@@ -6,6 +6,7 @@
 
 unsigned MAZE_CONFIG;
 unsigned TEXT_MAP_CONFIG;
+unsigned TITLE_MAP_CONFIG;
 
 // Define the data for the first line (Row 0)
 const uint8_t first_line_data[TEXT_MAP_WIDTH] = {
@@ -97,10 +98,94 @@ void tile_mode2_text_map_init(void) {
     // OPTIONS: bit3=1 (16x16 tiles), bit[2:0]=2 (8-bit color index) 
     // bit[4:7]=1000 (trim 8 pixels x) bit[8:11]=0000 (no trim y ) => 0b0000 1000 1010 = 0x08A
     // Plane 1 = text overlay layer (top 28 scanlines only: BEGIN=0, END=28)
-    if (xreg_vga_mode(2, 0x08A, TEXT_MAP_CONFIG, 1, 0, 0) < 0) {
+    if (xreg_vga_mode(2, 0x08A, TEXT_MAP_CONFIG, 2, 0, 0) < 0) {
         return;
     }
 
+}
+
+void tile_mode2_title_map_init(void) {
+
+    TITLE_MAP_CONFIG = TEXT_MAP_CONFIG + sizeof(vga_mode2_config_t); // After text map config
+
+    xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, x_wrap, false);
+    xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, y_wrap, false);
+    xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, x_pos_px, 0);
+    xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, y_pos_px, 0);
+    xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, width_tiles,      TITLE_MAP_WIDTH);
+    xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, height_tiles,     TITLE_MAP_HEIGHT);
+    xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, xram_data_ptr,    TITLE_MAP_DATA);     // tile ID grid
+    xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, xram_palette_ptr, TITLE_PALETTE_ADDR);
+    xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, xram_tile_ptr,    TITLE_TILES_DATA);   // tile bitmaps
+
+    RIA.addr0 = TITLE_PALETTE_ADDR;
+    RIA.step0 = 1;
+    for (int i = 0; i < 16; i++) {
+        RIA.rw0 = titles_palette[i] & 0xFF;
+        RIA.rw0 = titles_palette[i] >> 8;
+    }
+
+    // Mode 2 args: MODE, OPTIONS, CONFIG, PLANE, BEGIN, END
+    // OPTIONS: bit3=0 (8x8 tiles), bit[2:0]=2 (8-bit color index) 
+    // bit[4:7]=0000 (no trim x) bit[8:11]=0000 (no trim y ) => 0b0000 0000 0010 = 0x002
+    // Plane 3 = title overlay layer (top 28 scanlines only: BEGIN=0, END=28)
+    if (xreg_vga_mode(2, 0x002, TITLE_MAP_CONFIG, 1, 0, 0) < 0) {
+        return;
+    }
+
+}
+
+void write_text_to_text_map(uint8_t tx, uint8_t ty, const char *str) {
+    uint16_t offset = ty * TEXT_MAP_WIDTH + tx;
+    RIA.addr0 = TEXT_MAP_DATA + offset;
+    RIA.step0 = 1;
+    while (*str) {
+        char c = *str++;
+        uint8_t tile_idx = 0;
+        if (c >= 'A' && c <= 'Z') {
+            tile_idx = 1 + (c - 'A'); // A=1 .. Z=26
+        } else if (c >= '0' && c <= '9') {
+            static const uint8_t digit_tile_map[10] = { 46, 37, 38, 39, 40, 41, 42, 43, 44, 45 };
+            tile_idx = digit_tile_map[c - '0'];
+        }
+        RIA.rw0 = tile_idx;
+    }
+}
+
+void set_maze_palette_black(void) {
+    RIA.addr0 = MAZE_PALETTE_ADDR;
+    RIA.step0 = 1;
+    for (int i = 0; i < 16; i++) {
+        RIA.rw0 = 0x00;
+        RIA.rw0 = 0x00;
+    }
+}
+
+void restore_maze_palette(void) {
+    RIA.addr0 = MAZE_PALETTE_ADDR;
+    RIA.step0 = 1;
+    for (int i = 0; i < 16; i++) {
+        RIA.rw0 = maze_palette[i] & 0xFF;
+        RIA.rw0 = maze_palette[i] >> 8;
+    }
+}
+
+void set_title_palette_black(void) {
+    RIA.addr0 = TITLE_PALETTE_ADDR;
+    RIA.step0 = 1;
+    for (int i = 0; i < 16; i++) {
+        RIA.rw0 = 0x00;
+        RIA.rw0 = 0x00;
+    }
+}
+
+void restore_title_palette(void) {
+    RIA.addr0 = TITLE_PALETTE_ADDR;
+    RIA.step0 = 1;
+    for (int i = 0; i < 16; i++) {
+        RIA.rw0 = titles_palette[i] & 0xFF;
+        RIA.rw0 = titles_palette[i] >> 8;
+    }
 }
 
 void tile_mode2_palette_update(uint8_t frame){
@@ -142,17 +227,23 @@ void update_player_score_display(uint32_t score) {
 }
 
 // Player Lives display management on Row 13 of TEXT_MAP_DATA
-// Indices 32 ('x', tile index 53), 33 ('0', tens digit tile index 46), and 34 (ones lives digit tile index 37..46)
+// Indices 32 ('x', tile index 53), 33 (tens digit tile index 37..46), and 34 (ones digit tile index 37..46)
 static uint8_t s_current_lives = 3;
 static uint16_t s_lives_blink_timer = 0; // Total 128 frames for 8 blinks (16 frames per blink: 8 off, 8 on)
 
 void update_player_lives_display(uint8_t lives) {
+    if (lives > 99) lives = 99; // Cap at 99
     s_current_lives = lives;
+
     static const uint8_t digit_tile_map[10] = {
         46, 37, 38, 39, 40, 41, 42, 43, 44, 45
     };
 
-    uint8_t ones_tile = (lives <= 9) ? digit_tile_map[lives] : 45; // Cap at 9 digit tile
+    uint8_t tens_digit = lives / 10;
+    uint8_t ones_digit = lives % 10;
+
+    uint8_t tens_tile = digit_tile_map[tens_digit];
+    uint8_t ones_tile = digit_tile_map[ones_digit];
 
     // Row 13 base address: TEXT_MAP_DATA + (13 * 40) = TEXT_MAP_DATA + 520
     uint16_t row13_addr = TEXT_MAP_DATA + (13 * TEXT_MAP_WIDTH);
@@ -161,28 +252,28 @@ void update_player_lives_display(uint8_t lives) {
     RIA.step0 = 1;
     RIA.rw0 = 53;
 
-    RIA.addr0 = row13_addr + 33; // Index 33 -> Tens digit '0' (tile 46)
+    RIA.addr0 = row13_addr + 33; // Index 33 -> Tens digit (e.g. '0' for 03, '1' for 12, '9' for 99)
     RIA.step0 = 1;
-    RIA.rw0 = 46;
+    RIA.rw0 = tens_tile;
 
-    RIA.addr0 = row13_addr + 34; // Index 34 -> Ones lives digit
+    RIA.addr0 = row13_addr + 34; // Index 34 -> Ones digit
     RIA.step0 = 1;
     RIA.rw0 = ones_tile;
 }
 
 void trigger_extra_life_blink(void) {
     // 8 blinks: each blink has 8 frames off, 8 frames on => 16 frames per blink * 8 = 128 frames total
-    // Step 1: Blank out 'x', '0', and number of lives on frame 1
+    // Step 1: Blank out 'x', tens digit, and ones digit on frame 1
     uint16_t row13_addr = TEXT_MAP_DATA + (13 * TEXT_MAP_WIDTH);
     RIA.addr0 = row13_addr + 32; // Index 32 ('x')
     RIA.step0 = 1;
     RIA.rw0 = 0; // Blank tile 0
 
-    RIA.addr0 = row13_addr + 33; // Index 33 ('0')
+    RIA.addr0 = row13_addr + 33; // Index 33 (tens digit)
     RIA.step0 = 1;
     RIA.rw0 = 0; // Blank tile 0
 
-    RIA.addr0 = row13_addr + 34; // Index 34 (lives digit)
+    RIA.addr0 = row13_addr + 34; // Index 34 (ones digit)
     RIA.step0 = 1;
     RIA.rw0 = 0; // Blank tile 0
 
@@ -198,17 +289,19 @@ void update_lives_blink_animation(void) {
     static const uint8_t digit_tile_map[10] = {
         46, 37, 38, 39, 40, 41, 42, 43, 44, 45
     };
-    uint8_t ones_tile = (s_current_lives <= 9) ? digit_tile_map[s_current_lives] : 45;
+    uint8_t lives = (s_current_lives > 99) ? 99 : s_current_lives;
+    uint8_t tens_tile = digit_tile_map[lives / 10];
+    uint8_t ones_tile = digit_tile_map[lives % 10];
 
     if (s_lives_blink_timer == 127) {
-        // Frame 2 (frame 127 counting down): Put 'x', '0', and new number of lives back
+        // Frame 2 (frame 127 counting down): Put 'x', tens digit, and ones digit back
         RIA.addr0 = row13_addr + 32;
         RIA.step0 = 1;
         RIA.rw0 = 53;
 
         RIA.addr0 = row13_addr + 33;
         RIA.step0 = 1;
-        RIA.rw0 = 46;
+        RIA.rw0 = tens_tile;
 
         RIA.addr0 = row13_addr + 34;
         RIA.step0 = 1;
@@ -225,7 +318,7 @@ void update_lives_blink_animation(void) {
 
         RIA.addr0 = row13_addr + 33;
         RIA.step0 = 1;
-        RIA.rw0 = show_visible ? 46 : 0;
+        RIA.rw0 = show_visible ? tens_tile : 0;
 
         RIA.addr0 = row13_addr + 34;
         RIA.step0 = 1;
@@ -238,7 +331,7 @@ void update_lives_blink_animation(void) {
 
         RIA.addr0 = row13_addr + 33;
         RIA.step0 = 1;
-        RIA.rw0 = 46;
+        RIA.rw0 = tens_tile;
 
         RIA.addr0 = row13_addr + 34;
         RIA.step0 = 1;

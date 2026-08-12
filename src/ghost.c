@@ -69,6 +69,8 @@ bool is_death_sequence_active(void) {
     return s_death_seq_timer > 0;
 }
 
+static void clear_all_active_score_popups(void);
+
 void start_pacman_death_sequence(void) {
     if (s_death_seq_timer == 0) {
         s_death_seq_timer = 1;
@@ -76,6 +78,7 @@ void start_pacman_death_sequence(void) {
         s_ghosts_eaten_chain = 0;   // Reset scared ghost combo chain on death
         s_frightened_timer = 0;     // Cancel active frightened power pellet state on death
         reset_player_on_death();    // Reset Pac-Dots eaten multiplier tier back to 10 points (0-59 dots)
+        clear_all_active_score_popups(); // Remove any ghost or prize score popups off-screen
     }
 }
 
@@ -206,6 +209,27 @@ void trigger_prize_score_animation(uint8_t prize_index, uint16_t pts) {
     pa->digits[1] = (thousands == 0 && hundreds == 0) ? 48 : ((hundreds == 0) ? 116 : (106 + hundreds));
     pa->digits[2] = (thousands == 0 && hundreds == 0 && tens == 0) ? 48 : ((tens == 0) ? 116 : (106 + tens));
     pa->digits[3] = (ones == 0) ? 116 : (106 + ones);
+}
+
+void clear_all_active_score_popups(void) {
+    s_single_score_anim.active = false;
+    for (int d = 0; d < 4; d++) {
+        unsigned score_config = GHOST_SCORE_CONFIG + (d * sizeof(vga_mode5_sprite_t));
+        xram0_struct_set(score_config, vga_mode5_sprite_t, x_pos_px, -32);
+        xram0_struct_set(score_config, vga_mode5_sprite_t, y_pos_px, -32);
+        xram0_struct_set(score_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+    }
+
+    for (int p_idx = 0; p_idx < NPRIZES; p_idx++) {
+        s_prize_score_anims[p_idx].active = false;
+        uint8_t slot_offset = (1 + p_idx) * 4;
+        for (int d = 0; d < 4; d++) {
+            unsigned score_config = GHOST_SCORE_CONFIG + ((slot_offset + d) * sizeof(vga_mode5_sprite_t));
+            xram0_struct_set(score_config, vga_mode5_sprite_t, x_pos_px, -32);
+            xram0_struct_set(score_config, vga_mode5_sprite_t, y_pos_px, -32);
+            xram0_struct_set(score_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+        }
+    }
 }
 static const uint16_t FRIGHTENED_DURATION_TABLE[22] = {
     600, 583, 566, 549, 531, 514, 497, 480, 463, 446,
@@ -532,6 +556,7 @@ void reset_ghosts_to_initial_positions(void) {
     init_ghost_data();
     s_initial_exit_idx = 0;
     s_fifo_count = 0;
+    s_game_motion_started = false;
     for (int i = 0; i < 4; i++) {
         s_fifo_queue[i] = -1;
     }
@@ -699,7 +724,6 @@ void ghost_update_motion(void) {
         } else {
             // End of death sequence (frame 306)!
             s_death_seq_timer = 0;
-            s_game_motion_started = true;
 
             // Remove 6 radial balls off-screen
             for (int k = 0; k < NSPARKLES; k++) {
@@ -709,17 +733,23 @@ void ghost_update_motion(void) {
                 xram0_struct_set(ball_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
             }
 
-            // Restore Pac-Man facing last direction
-            player.dir = s_death_last_dir;
-            uint8_t open_frame = 5;
-            switch (player.dir) {
-                case DIR_UP:    open_frame = 0; break;
-                case DIR_DOWN:  open_frame = 2; break;
-                case DIR_LEFT:  open_frame = 4; break;
-                case DIR_RIGHT: open_frame = 6; break;
+            if (player.lives == 0) {
+                start_title_screen();
+            } else {
+                s_game_motion_started = true;
+
+                // Restore Pac-Man facing last direction
+                player.dir = s_death_last_dir;
+                uint8_t open_frame = 5;
+                switch (player.dir) {
+                    case DIR_UP:    open_frame = 0; break;
+                    case DIR_DOWN:  open_frame = 2; break;
+                    case DIR_LEFT:  open_frame = 4; break;
+                    case DIR_RIGHT: open_frame = 6; break;
+                }
+                player.frame = open_frame;
+                xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (player.frame * SPRITE_FRAME_SIZE)));
             }
-            player.frame = open_frame;
-            xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (player.frame * SPRITE_FRAME_SIZE)));
         }
 
         return;

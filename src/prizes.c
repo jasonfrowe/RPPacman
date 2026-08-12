@@ -1,6 +1,7 @@
 #include <rp6502.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 #include "constants.h"
 #include "tile_mode2.h"
 #include "sprite_mode5.h"
@@ -38,6 +39,49 @@ typedef struct {
 } maze_transition_t;
 
 static maze_transition_t s_transitions[2]; // Index 0: Left side, Index 1: Right side
+
+void reset_prizes_and_mazes_level(void) {
+    left_side_level = 0;
+    right_side_level = 0;
+    left_prize_count = 0;
+    right_prize_count = 0;
+    left_prize_active = false;
+    right_prize_active = false;
+
+    // Reset maze transitions
+    memset(s_transitions, 0, sizeof(s_transitions));
+
+    // Reset active prizes sprites offscreen
+    for (int i = 0; i < NPRIZES; i++) {
+        prizes[i].frame = 48;
+        prizes[i].sparkle_frame = 48;
+        unsigned current_prize_config = PRIZE_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+        xram0_struct_set(current_prize_config, vga_mode5_sprite_t, x_pos_px, -32);
+        xram0_struct_set(current_prize_config, vga_mode5_sprite_t, y_pos_px, -32);
+        xram0_struct_set(current_prize_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+
+        unsigned current_sparkle_config = PRIZE_SPARKLE_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+        xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, x_pos_px, -32);
+        xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, y_pos_px, -32);
+        xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+    }
+
+    // Re-copy Level 0 map into MAZE_MAP_DATA in XRAM
+    uint16_t map0_base = ALL_MAZE_MAPS_DATA;
+    uint16_t size = MAZE_MAP_WIDTH * MAZE_MAP_HEIGHT;
+    xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, xram_data_ptr, MAZE_MAP_DATA);
+    
+    RIA.addr0 = MAZE_MAP_DATA;
+    RIA.step0 = 1;
+    RIA.addr1 = map0_base;
+    RIA.step1 = 1;
+    for (uint16_t i = 0; i < size; i++) {
+        RIA.rw0 = RIA.rw1;
+    }
+
+    init_side_pellet_counters();
+}
+
 static uint16_t left_side_pellets_remaining = 0;
 static uint16_t right_side_pellets_remaining = 0;
 
