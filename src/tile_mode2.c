@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include "tile_mode2.h"
 #include "constants.h"
+#include "ghost.h"
 
 unsigned MAZE_CONFIG;
 unsigned TEXT_MAP_CONFIG;
@@ -345,4 +346,48 @@ void update_lives_blink_animation(void) {
         RIA.step0 = 1;
         RIA.rw0 = ones_tile;
     }
+}
+
+// 5-minute countdown timer (5:00 -> 300 seconds -> 18000 frames at 60 FPS)
+static uint16_t s_game_timer_frames = 18000;
+
+void reset_game_timer(void) {
+    s_game_timer_frames = 18000; // 5:00 (300 seconds * 60 FPS)
+    update_game_timer_display();
+}
+
+bool is_game_timer_expired(void) {
+    return (s_game_timer_frames == 0);
+}
+
+void update_game_timer_display(void) {
+    if (s_game_timer_frames > 0 && is_game_motion_started()) {
+        s_game_timer_frames--;
+    }
+
+    static const uint8_t digit_tile_map[10] = {
+        46, 37, 38, 39, 40, 41, 42, 43, 44, 45
+    };
+
+    uint16_t total_seconds = (s_game_timer_frames + 59) / 60; // Round up so 300s shows 5'00
+    if (total_seconds > 300) total_seconds = 300;
+
+    uint8_t minutes = total_seconds / 60;
+    uint8_t seconds = total_seconds % 60;
+
+    uint8_t min_tile = digit_tile_map[minutes % 10];
+    uint8_t sec_tens_tile = digit_tile_map[seconds / 10];
+    uint8_t sec_ones_tile = digit_tile_map[seconds % 10];
+
+    // Indices 19, 20, 21, 22 on Row 0:
+    // Index 19 -> Minute digit (e.g., 41 for '5')
+    // Index 20 -> Apostrophe '\'' (tile 54)
+    // Index 21 -> Tens of seconds digit (e.g., 46 for '0')
+    // Index 22 -> Ones of seconds digit (e.g., 46 for '0')
+    RIA.addr0 = TEXT_MAP_DATA + 19;
+    RIA.step0 = 1;
+    RIA.rw0 = min_tile;
+    RIA.rw0 = 54; // '\''
+    RIA.rw0 = sec_tens_tile;
+    RIA.rw0 = sec_ones_tile;
 }

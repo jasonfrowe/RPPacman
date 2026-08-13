@@ -44,8 +44,8 @@ void start_title_screen(void) {
     // 3. Write menu and header text to TEXT_MAP_CONFIG
     write_text_to_text_map(12, 6,  "PICOCOMPUTER 6502");
     write_text_to_text_map(17, 8,  "NORMAL");
-    write_text_to_text_map(17, 9,  "EXTRAS");
-    write_text_to_text_map(17, 10, "OPTION");
+    write_text_to_text_map(17, 9,  "EXTRA ");
+    write_text_to_text_map(17, 10, "OPTIONS");
 
     // 4. Position Pac-Man sprite to the left of "NORMAL" (117px, y offset +1)
     int16_t cursor_x = 117;
@@ -67,9 +67,9 @@ void start_normal_game(void) {
 
     // 1. Clear menu text from TEXT_MAP_CONFIG & hide title screen (set TITLE_PALETTE_ADDR to all black 0x0000)
     write_text_to_text_map(12, 6,  "                 ");
-    write_text_to_text_map(17, 8,  "      ");
-    write_text_to_text_map(17, 9,  "      ");
-    write_text_to_text_map(17, 10, "      ");
+    write_text_to_text_map(17, 8,  "       ");
+    write_text_to_text_map(17, 9,  "       ");
+    write_text_to_text_map(17, 10, "       ");
     set_title_palette_black();
 
     // 2. Restore maze palette
@@ -93,6 +93,7 @@ void start_normal_game(void) {
 
     update_player_score_display(player.score);
     update_player_lives_display(player.lives);
+    reset_game_timer();
 
     xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, x_pos_px, player.x_pos_px);
     xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, y_pos_px, player.y_pos_px);
@@ -206,9 +207,15 @@ int main(void)
             prize_update_motion();
             update_maze_munchers_animation();
             update_lives_blink_animation();
+            update_game_timer_display();
 
-            // Update maze palette animation
-            tile_mode2_palette_update(frame);
+            if (is_game_timer_expired()) {
+                // 5 minute timer expired -> End game and return to Title Screen
+                start_title_screen();
+            } else {
+                // Update maze palette animation
+                tile_mode2_palette_update(frame);
+            }
         }
 
         // 4. SYNC (Wait for VSYNC)

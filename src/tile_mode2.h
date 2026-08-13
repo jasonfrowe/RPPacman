@@ -80,6 +80,10 @@ void update_player_lives_display(uint8_t lives);
 void trigger_extra_life_blink(void);
 void update_lives_blink_animation(void);
 
+void reset_game_timer(void);
+void update_game_timer_display(void);
+bool is_game_timer_expired(void);
+
 extern void tile_mode2_palette_update(uint8_t frame);
 
 #endif // TILE_MODE2_H

@@ -44,6 +44,10 @@ static uint8_t s_fifo_count = 0;
 
 static uint16_t s_exit_delay_timer = 0;
 static bool s_game_motion_started = false;
+
+bool is_game_motion_started(void) {
+    return s_game_motion_started;
+}
 static uint8_t s_eat_pause_timer = 0; // Freeze movement during 30-frame eat animation pause
 
 // Pac-Man death animation state tracking (Total: 305 frames)
@@ -69,7 +73,7 @@ bool is_death_sequence_active(void) {
     return s_death_seq_timer > 0;
 }
 
-static void clear_all_active_score_popups(void);
+
 
 void start_pacman_death_sequence(void) {
     if (s_death_seq_timer == 0) {
@@ -476,8 +480,8 @@ static void update_ghost_outside_movement(int ghost_index) {
 
             static const int8_t EVAL_DIRS[4] = { DIR_UP, DIR_LEFT, DIR_DOWN, DIR_RIGHT };
 
-            // Check if ghost is in vertical tunnel regions (< 32px or > 215px drawn Y)
-            bool is_in_vertical_tunnel = (drawn_y < 32) || ((drawn_y + SPRITE_SIZE_PX) > 215);
+            // Check if ghost is in vertical tunnel regions (< 40px or > 200px drawn Y)
+            bool is_in_vertical_tunnel = (drawn_y < 40) || ((drawn_y + SPRITE_SIZE_PX) > 200);
 
             for (uint8_t d = 0; d < 4; d++) {
                 int8_t test_dir = EVAL_DIRS[d];
@@ -557,6 +561,8 @@ void reset_ghosts_to_initial_positions(void) {
     s_initial_exit_idx = 0;
     s_fifo_count = 0;
     s_game_motion_started = false;
+    s_ghosts_eaten_chain = 0;
+    s_frightened_timer = 0;
     for (int i = 0; i < 4; i++) {
         s_fifo_queue[i] = -1;
     }

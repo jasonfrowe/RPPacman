@@ -10,6 +10,8 @@ bool is_death_sequence_active(void);
 void trigger_eaten_ghost_animation(uint8_t ghost_index, uint32_t pts);
 void trigger_prize_score_animation(uint8_t prize_index, uint16_t pts);
 void reset_ghosts_to_initial_positions(void);
+void clear_all_active_score_popups(void);
+bool is_game_motion_started(void);
 void start_title_screen(void);
 void start_normal_game(void);
 

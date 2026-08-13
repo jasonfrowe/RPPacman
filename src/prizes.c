@@ -48,6 +48,9 @@ void reset_prizes_and_mazes_level(void) {
     left_prize_active = false;
     right_prize_active = false;
 
+    // Clear all active score popups
+    clear_all_active_score_popups();
+
     // Reset maze transitions
     memset(s_transitions, 0, sizeof(s_transitions));
 
@@ -59,8 +62,10 @@ void reset_prizes_and_mazes_level(void) {
         xram0_struct_set(current_prize_config, vga_mode5_sprite_t, x_pos_px, -32);
         xram0_struct_set(current_prize_config, vga_mode5_sprite_t, y_pos_px, -32);
         xram0_struct_set(current_prize_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+    }
 
-        unsigned current_sparkle_config = PRIZE_SPARKLE_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+    for (int k = 0; k < NSPARKLES; k++) {
+        unsigned current_sparkle_config = PRIZE_SPARKLE_CONFIG + (k * sizeof(vga_mode5_sprite_t));
         xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, x_pos_px, -32);
         xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, y_pos_px, -32);
         xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
