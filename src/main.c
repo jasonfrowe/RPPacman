@@ -8,6 +8,7 @@
 #include "player.h"
 #include "ghost.h"
 #include "prizes.h"
+#include "opl.h"
 
 typedef enum {
     STATE_TITLE,
@@ -30,6 +31,7 @@ static uint16_t s_title_timer = 0;
 static uint8_t s_menu_selection = 0; // 0: NORMAL, 1: EXTRAS, 2: OPTION
 static uint8_t s_pacman_anim_timer = 0;
 static uint8_t s_pacman_anim_frame = 6; // 6 or 7
+static bool s_game_bgm_playing = false;
 
 void hide_all_ghosts(void) {
     for (int i = 0; i < NGHOSTS; i++) {
@@ -53,6 +55,9 @@ void start_title_screen(void) {
     s_title_substate = TITLE_SUBSTATE_COLD_SLIDE;
     s_title_timer = 0;
     s_menu_selection = 0;
+    s_game_bgm_playing = false;
+
+    music_stop();
 
     // 1. Hide maze by setting maze palette to all black
     set_maze_palette_black();
@@ -93,7 +98,9 @@ void start_warm_title_screen(void) {
     s_title_substate = TITLE_SUBSTATE_WARM_FADE_OUT;
     s_title_timer = 0;
     s_menu_selection = 0;
+    s_game_bgm_playing = false;
 
+    music_stop();
     hide_all_ghosts();
     set_pacman_cursor_hidden();
     reset_prizes_and_mazes_level();
@@ -101,6 +108,9 @@ void start_warm_title_screen(void) {
 
 void start_normal_game(void) {
     s_game_state = STATE_GAMEPLAY;
+    s_game_bgm_playing = false;
+
+    music_stop();
 
     // 1. Clear text map & hide title screen
     write_text_to_text_map(11, 6,  "                  ");
@@ -160,6 +170,7 @@ static bool init_graphics(void)
 }
 
 uint8_t vsync_last = 0;
+uint8_t s_music_vsync_last = 0;
 uint8_t frame = 0;
 
 int main(void)
@@ -168,6 +179,10 @@ int main(void)
 
     input_actions_t actions;
     input_init();
+
+    // Initialise audio hardware
+    OPL_Config(1, OPL_ADDR);
+    opl_init();
 
     // Initialise graphics
     if (!init_graphics()) {
@@ -215,6 +230,9 @@ int main(void)
                         // Write "PICOCOMPUTER  6502" at (11, 6) and "PRESS START BUTTON" at (11, 12)
                         write_text_to_text_map(11, 6,  "PICOCOMPUTER  6502");
                         write_text_to_text_map(11, 12, "PRESS START BUTTON");
+
+                        // Start Title Music (PACMAN02.BIN)
+                        music_init("ROM:pacman02");
 
                         s_title_substate = TITLE_SUBSTATE_PRESS_START;
                         s_title_timer = 0;
@@ -320,6 +338,9 @@ int main(void)
                         write_text_to_text_map(17, 9,  "EXTRA ");
                         write_text_to_text_map(17, 10, "OPTIONS");
 
+                        // Start Title Music (PACMAN02.BIN) when returning to title screen after Game Over
+                        music_init("ROM:pacman02");
+
                         s_menu_selection = 0;
                         s_title_substate = TITLE_SUBSTATE_WARM_FADE_IN;
                         s_title_timer = 0;
@@ -354,6 +375,12 @@ int main(void)
             update_lives_blink_animation();
             update_game_timer_display();
 
+            // Start playing gameplay music (LODERUN2.BIN) once Pac-Man begins to move
+            if (!s_game_bgm_playing && is_game_motion_started()) {
+                s_game_bgm_playing = true;
+                music_init("ROM:loderun2");
+            }
+
             if (is_game_timer_expired()) {
                 // 5 minute timer expired -> End game and return to Title Screen
                 start_warm_title_screen();
@@ -364,14 +391,21 @@ int main(void)
         }
 
         // 4. SYNC (Wait for VSYNC)
-        // Spin here until the hardware vsync register changes
         while (RIA.vsync == vsync_last) {
             // Do nothing, just wait
         }
-        
-        // Update our tracker and frame counter
-        vsync_last = RIA.vsync;
-        
+
+        uint8_t now_vsync = RIA.vsync;
+        uint8_t music_ticks = (uint8_t)(now_vsync - s_music_vsync_last);
+        if (music_ticks == 0u) {
+            music_ticks = 1u;
+        }
+        s_music_vsync_last = now_vsync;
+        vsync_last = now_vsync;
+
+        // Advance OPL2 music sequencer
+        update_music_advance(music_ticks);
+
         frame++;
         if (frame >= 60) frame = 0;
     }

@@ -19,6 +19,9 @@ rp6502_asset(RPPacMan 0x16EDA images/R_Mazes.bin)
 rp6502_asset(RPPacMan 0x1AB70 images/title_map.bin)
 rp6502_asset(RPPacMan 0x1B020 images/Titles_RP6502_4bpp.bin)
 
+# Music assets
+rp6502_asset(RPPacMan loderun2 music/LODERUN2.BIN)
+rp6502_asset(RPPacMan pacman02 music/PACMAN02.BIN)
 
 rp6502_executable(RPPacMan DATA file RESET file)
 target_sources(RPPacMan PRIVATE
@@ -29,4 +32,5 @@ target_sources(RPPacMan PRIVATE
     src/player.c
     src/ghost.c
     src/prizes.c
+    src/opl.c
 )
