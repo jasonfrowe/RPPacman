@@ -21,6 +21,7 @@ rp6502_asset(RPPacMan 0x1B020 images/Titles_RP6502_4bpp.bin)
 
 # Music assets
 rp6502_asset(RPPacMan loderun2 music/LODERUN2.BIN)
+rp6502_asset(RPPacMan pacman01 music/PACMAN01.BIN)
 rp6502_asset(RPPacMan pacman02 music/PACMAN02.BIN)
 
 rp6502_executable(RPPacMan DATA file RESET file)

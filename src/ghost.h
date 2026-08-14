@@ -12,6 +12,7 @@ void trigger_prize_score_animation(uint8_t prize_index, uint16_t pts);
 void reset_ghosts_to_initial_positions(void);
 void clear_all_active_score_popups(void);
 bool is_game_motion_started(void);
+void set_game_motion_started(bool started);
 void start_title_screen(void);
 void start_warm_title_screen(void);
 void start_normal_game(void);

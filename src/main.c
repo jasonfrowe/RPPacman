@@ -16,12 +16,18 @@ typedef enum {
 } game_state_t;
 
 typedef enum {
-    TITLE_SUBSTATE_COLD_SLIDE,   // 240 frames sliding title map y_pos_px from 240 down to 0
-    TITLE_SUBSTATE_PRESS_START,  // Flashing "PRESS START BUTTON" every 32 frames until START
-    TITLE_SUBSTATE_MENU_READY,   // Normal menu ("NORMAL", "EXTRA", "OPTIONS" with Pac-Man cursor)
-    TITLE_SUBSTATE_WARM_FADE_OUT,// 8 frames fade to black from gameplay
-    TITLE_SUBSTATE_WARM_BLACK,   // 16 frames black screen
-    TITLE_SUBSTATE_WARM_FADE_IN   // 8 frames fade in title screen
+    TITLE_SUBSTATE_COLD_SLIDE,            // 240 frames sliding title map y_pos_px from 240 down to 0
+    TITLE_SUBSTATE_PRESS_START,           // Flashing "PRESS START BUTTON" every 32 frames until START
+    TITLE_SUBSTATE_MENU_READY,            // Normal menu ("NORMAL", "EXTRA", "OPTIONS" with Pac-Man cursor)
+    TITLE_SUBSTATE_GAME_START_WAIT_40,    // 40 frames wait after selecting NORMAL (cursor removed, music stopped)
+    TITLE_SUBSTATE_GAME_START_FADE_OUT,   // 8 frames fade out title screen to black
+    TITLE_SUBSTATE_GAME_START_BLACK_18,   // 18 frames black screen wait
+    TITLE_SUBSTATE_GAME_START_FADE_IN,    // 8 frames fade in maze with Pac-Man & ghosts at start positions
+    TITLE_SUBSTATE_GAME_START_WAIT_20,    // 20 frames wait with maze revealed
+    TITLE_SUBSTATE_GAME_START_INTRO_MUSIC,// 236 frames wait while playing PACMAN01.BIN intro theme
+    TITLE_SUBSTATE_WARM_FADE_OUT,         // 8 frames fade to black from gameplay
+    TITLE_SUBSTATE_WARM_BLACK,            // 16 frames black screen
+    TITLE_SUBSTATE_WARM_FADE_IN            // 8 frames fade in title screen
 } title_substate_t;
 
 static game_state_t s_game_state = STATE_TITLE;
@@ -284,11 +290,15 @@ int main(void)
                     // Select Menu Option (Gamepad 'A' button)
                     if (press_action) {
                         if (s_menu_selection == 0) {
-                            start_normal_game();
+                            // "NORMAL" selected -> Begin game start transition sequence!
+                            set_pacman_cursor_hidden();
+                            music_stop();
+                            s_title_substate = TITLE_SUBSTATE_GAME_START_WAIT_40;
+                            s_title_timer = 0;
                         }
                     }
 
-                    if (s_game_state == STATE_TITLE) {
+                    if (s_game_state == STATE_TITLE && s_title_substate == TITLE_SUBSTATE_MENU_READY) {
                         // Animate Pac-Man cursor sprite (tiles 6 and 7, 4 frames each)
                         s_pacman_anim_timer++;
                         if (s_pacman_anim_timer >= 4) {
@@ -304,6 +314,122 @@ int main(void)
                         xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, x_pos_px, player.x_pos_px);
                         xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, y_pos_px, player.y_pos_px);
                         xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (player.frame * SPRITE_FRAME_SIZE)));
+                    }
+                    break;
+                }
+
+                case TITLE_SUBSTATE_GAME_START_WAIT_40: {
+                    // 40 frames wait after selecting NORMAL
+                    if (s_title_timer < 40) {
+                        s_title_timer++;
+                    } else {
+                        s_title_substate = TITLE_SUBSTATE_GAME_START_FADE_OUT;
+                        s_title_timer = 0;
+                    }
+                    break;
+                }
+
+                case TITLE_SUBSTATE_GAME_START_FADE_OUT: {
+                    // 8 frames: fade title & font palettes out to black (every 2 frames)
+                    if (s_title_timer < 8) {
+                        uint8_t step = 4 - (s_title_timer / 2); // 4, 3, 2, 1
+                        set_title_palette_scaled(step - 1, 4, false, 0, false);
+                        set_font_palette_scaled(step - 1, 4);
+                        s_title_timer++;
+                    } else {
+                        set_title_palette_black();
+                        set_font_palette_black();
+                        s_title_substate = TITLE_SUBSTATE_GAME_START_BLACK_18;
+                        s_title_timer = 0;
+                    }
+                    break;
+                }
+
+                case TITLE_SUBSTATE_GAME_START_BLACK_18: {
+                    // 18 frames black screen wait
+                    if (s_title_timer < 18) {
+                        s_title_timer++;
+                    } else {
+                        // Clear title text & restore maze map
+                        write_text_to_text_map(11, 6,  "                  ");
+                        write_text_to_text_map(11, 12, "                  ");
+                        write_text_to_text_map(17, 8,  "       ");
+                        write_text_to_text_map(17, 9,  "       ");
+                        write_text_to_text_map(17, 10, "       ");
+
+                        // Reset ghosts, maze, and player to starting positions
+                        reset_ghosts_to_initial_positions();
+                        reset_prizes_and_mazes_level();
+
+                        player.world_px = 23 * MAZE_TILES_SIZE_PX; // 184
+                        player.world_py = 21 * MAZE_TILES_SIZE_PX; // 168
+                        player.x_pos_px = (int16_t)((SCREEN_WIDTH - SPRITE_SIZE_PX) / 2);
+                        player.y_pos_px = player.world_py - 3;
+                        player.score = 0;
+                        player.pellets_eaten = 0;
+                        player.lives = 3;
+                        player.dir = DIR_NONE;
+                        clear_player_queued_dir();
+                        player.frame = 5; // Facing left / closed
+
+                        update_player_score_display(player.score);
+                        update_player_lives_display(player.lives);
+                        reset_game_timer();
+
+                        xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, x_pos_px, player.x_pos_px);
+                        xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, y_pos_px, player.y_pos_px);
+                        xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (player.frame * SPRITE_FRAME_SIZE)));
+
+                        s_title_substate = TITLE_SUBSTATE_GAME_START_FADE_IN;
+                        s_title_timer = 0;
+                    }
+                    break;
+                }
+
+                case TITLE_SUBSTATE_GAME_START_FADE_IN: {
+                    // 8 frames: fade in maze and font palettes from black (every 2 frames)
+                    if (s_title_timer < 8) {
+                        s_title_timer++;
+                    } else {
+                        restore_maze_palette();
+                        restore_font_palette();
+                        s_title_substate = TITLE_SUBSTATE_GAME_START_WAIT_20;
+                        s_title_timer = 0;
+                    }
+                    break;
+                }
+
+                case TITLE_SUBSTATE_GAME_START_WAIT_20: {
+                    // 20 frames wait with maze revealed
+                    if (s_title_timer < 20) {
+                        s_title_timer++;
+                    } else {
+                        // Play PACMAN01.BIN intro theme scaled to 0.8x default speed
+                        music_init("ROM:pacman01");
+                        music_set_tempo_scale(205); // 205 / 256 = 0.8x speed
+                        s_title_substate = TITLE_SUBSTATE_GAME_START_INTRO_MUSIC;
+                        s_title_timer = 0;
+                    }
+                    break;
+                }
+
+                case TITLE_SUBSTATE_GAME_START_INTRO_MUSIC: {
+                    // 236 frames wait while playing intro music PACMAN01.BIN
+                    if (s_title_timer < 236) {
+                        s_title_timer++;
+                    } else {
+                        // Intro music complete -> Start game!
+                        s_game_state = STATE_GAMEPLAY;
+                        s_game_bgm_playing = false;
+
+                        // Automatically start Pac-Man moving left
+                        player.dir = DIR_LEFT;
+                        clear_player_queued_dir();
+                        set_game_motion_started(true);
+
+                        // Start playing gameplay music (LODERUN2.BIN)
+                        s_game_bgm_playing = true;
+                        music_init("ROM:loderun2");
                     }
                     break;
                 }

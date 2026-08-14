@@ -48,6 +48,10 @@ static bool s_game_motion_started = false;
 bool is_game_motion_started(void) {
     return s_game_motion_started;
 }
+
+void set_game_motion_started(bool started) {
+    s_game_motion_started = started;
+}
 static uint8_t s_eat_pause_timer = 0; // Freeze movement during 30-frame eat animation pause
 
 // Pac-Man death animation state tracking (Total: 305 frames)

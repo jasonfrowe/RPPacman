@@ -29,6 +29,7 @@ extern void opl_fifo_clear(void);
 extern void opl_silence_all(void);
 extern void OPL_Config(uint8_t enable, uint16_t addr);
 extern void music_init(const char* filename);
+extern void music_set_tempo_scale(uint16_t scale_256);
 extern void music_stop(void);
 extern void music_pause(void);
 extern void music_resume(void);
