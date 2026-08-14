@@ -330,14 +330,14 @@ void check_pacman_ghost_collisions(void) {
 
 // Compute Arcade target tile for ghosts in normal CHASE mode
 static void compute_ghost_target_tile(int ghost_index, int16_t *target_tx, int16_t *target_ty) {
-    int16_t pac_tx = (int16_t)(player.world_px / MAZE_TILES_SIZE_PX);
-    int16_t pac_ty = (int16_t)(player.world_py / MAZE_TILES_SIZE_PX);
+    int16_t pac_tx = (int16_t)((player.world_px + (MAZE_TILES_SIZE_PX / 2)) / MAZE_TILES_SIZE_PX);
+    int16_t pac_ty = (int16_t)((player.world_py + (MAZE_TILES_SIZE_PX / 2)) / MAZE_TILES_SIZE_PX);
 
     int8_t pac_dx, pac_dy;
     get_dir_offset(player.dir, &pac_dx, &pac_dy);
 
     switch (ghost_index) {
-        case 0: // Red (Blinky): Direct Target -> Pac-Man's exact tile
+        case 0: // Red (Blinky): Direct Target -> Pac-Man's exact current tile
             *target_tx = pac_tx;
             *target_ty = pac_ty;
             break;
@@ -352,8 +352,8 @@ static void compute_ghost_target_tile(int ghost_index, int16_t *target_tx, int16
 
         case 2: // Cyan (Inky): Vector target using Blinky's position and 2 tiles ahead of Pac-Man
             {
-                int16_t blinky_tx = (int16_t)(ghosts[0].world_px / MAZE_TILES_SIZE_PX);
-                int16_t blinky_ty = (int16_t)(ghosts[0].world_py / MAZE_TILES_SIZE_PX);
+                int16_t blinky_tx = (int16_t)((ghosts[0].world_px + (MAZE_TILES_SIZE_PX / 2)) / MAZE_TILES_SIZE_PX);
+                int16_t blinky_ty = (int16_t)((ghosts[0].world_py + (MAZE_TILES_SIZE_PX / 2)) / MAZE_TILES_SIZE_PX);
 
                 int16_t pivot_x = pac_tx + (2 * pac_dx);
                 int16_t pivot_y = pac_ty + (2 * pac_dy);
@@ -369,8 +369,8 @@ static void compute_ghost_target_tile(int ghost_index, int16_t *target_tx, int16
 
         case 3: // Orange (Clyde): Direct target if distance > 8 tiles; home corner (0, 27) if distance <= 8
             {
-                int16_t clyde_tx = (int16_t)(ghosts[3].world_px / MAZE_TILES_SIZE_PX);
-                int16_t clyde_ty = (int16_t)(ghosts[3].world_py / MAZE_TILES_SIZE_PX);
+                int16_t clyde_tx = (int16_t)((ghosts[3].world_px + (MAZE_TILES_SIZE_PX / 2)) / MAZE_TILES_SIZE_PX);
+                int16_t clyde_ty = (int16_t)((ghosts[3].world_py + (MAZE_TILES_SIZE_PX / 2)) / MAZE_TILES_SIZE_PX);
 
                 int32_t dx = (int32_t)(clyde_tx - pac_tx);
                 int32_t dy = (int32_t)(clyde_ty - pac_ty);
@@ -408,22 +408,13 @@ static void update_ghost_outside_movement(int ghost_index) {
     }
 
     int8_t dx, dy;
-    get_dir_offset(g->dir, &dx, &dy);
-
     int16_t move_pixels = 0;
-    if (dx > 0) {
+
+    if (g->dir == DIR_LEFT || g->dir == DIR_RIGHT) {
         g->sub_px += speed_fp;
         move_pixels = g->sub_px >> 8;
         g->sub_px &= 0x00FF;
-    } else if (dx < 0) {
-        g->sub_px += speed_fp;
-        move_pixels = g->sub_px >> 8;
-        g->sub_px &= 0x00FF;
-    } else if (dy > 0) {
-        g->sub_py += speed_fp;
-        move_pixels = g->sub_py >> 8;
-        g->sub_py &= 0x00FF;
-    } else if (dy < 0) {
+    } else if (g->dir == DIR_UP || g->dir == DIR_DOWN) {
         g->sub_py += speed_fp;
         move_pixels = g->sub_py >> 8;
         g->sub_py &= 0x00FF;
@@ -462,13 +453,14 @@ static void update_ghost_outside_movement(int ghost_index) {
             }
         }
 
-        // Evaluate intersection turn decisions
+        // Evaluate intersection turn decisions 1 tile (8px) ahead before stepping into the tile center!
+        // In original Arcade Pac-Man, ghosts select their next direction at the entry to the tile preceding an intersection.
         bool at_intersection = (g->world_px % MAZE_TILES_SIZE_PX == 0) &&
                                (g->world_py % MAZE_TILES_SIZE_PX == 0);
 
         if (at_intersection) {
-            int16_t cur_tx = (int16_t)(g->world_px / MAZE_TILES_SIZE_PX);
-            int16_t cur_ty = (int16_t)(g->world_py / MAZE_TILES_SIZE_PX);
+            int16_t cur_tx = (int16_t)((g->world_px + (MAZE_TILES_SIZE_PX / 2)) / MAZE_TILES_SIZE_PX);
+            int16_t cur_ty = (int16_t)((g->world_py + (MAZE_TILES_SIZE_PX / 2)) / MAZE_TILES_SIZE_PX);
 
             int16_t target_tx, target_ty;
             if (g->mode == GHOST_MODE_EATEN) {
@@ -477,9 +469,8 @@ static void update_ghost_outside_movement(int ghost_index) {
                 target_ty = 12;
             } else if (g->mode == GHOST_MODE_FRIGHTENED) {
                 // Frightened ghosts select target using pseudo-random tile based on current tile & ghost index
-                // This ensures deterministic, valid maze pathfinding away from Pac-Man without pushing targets out of bounds
-                int16_t pac_tx = (int16_t)(player.world_px / MAZE_TILES_SIZE_PX);
-                int16_t pac_ty = (int16_t)(player.world_py / MAZE_TILES_SIZE_PX);
+                int16_t pac_tx = (int16_t)((player.world_px + (MAZE_TILES_SIZE_PX / 2)) / MAZE_TILES_SIZE_PX);
+                int16_t pac_ty = (int16_t)((player.world_py + (MAZE_TILES_SIZE_PX / 2)) / MAZE_TILES_SIZE_PX);
 
                 // Corner scatter targets for frightened mode as fallback directions
                 static const int16_t CORNER_TX[4] = { 0, 46, 0, 46 };
@@ -507,6 +498,7 @@ static void update_ghost_outside_movement(int ghost_index) {
             int8_t best_dir = DIR_NONE;
             int32_t min_dist_sq = 0x7FFFFFFF;
 
+            // Strict Arcade Direction Priority Order: UP, LEFT, DOWN, RIGHT
             static const int8_t EVAL_DIRS[4] = { DIR_UP, DIR_LEFT, DIR_DOWN, DIR_RIGHT };
 
             // Check if ghost is in vertical tunnel regions (< 40px or > 200px drawn Y)
