@@ -517,18 +517,20 @@ void player_update_motion(const input_actions_t *actions) {
 
     // Update Ghost screen positions relative to endless maze scroll (with visual offsets)
     for (int i = 0; i < NGHOSTS; i++) {
-        if (ghosts[i].world_px < 0) {
+        while (ghosts[i].world_px < 0) {
             ghosts[i].world_px += WORLD_WIDTH;
-        } else if (ghosts[i].world_px >= WORLD_WIDTH) {
+        }
+        while (ghosts[i].world_px >= WORLD_WIDTH) {
             ghosts[i].world_px -= WORLD_WIDTH;
         }
 
         int16_t ghost_screen_x = ghosts[i].world_px + maze_dx;
-        
-        // Endless horizontal scrolling wrapping for ghost screen coordinates
-        if (ghost_screen_x < -16) {
+
+        // Endless horizontal scrolling wrapping for ghost screen coordinates relative to canvas width
+        while (ghost_screen_x < -16) {
             ghost_screen_x += WORLD_WIDTH;
-        } else if (ghost_screen_x >= (WORLD_WIDTH - 16)) {
+        }
+        while (ghost_screen_x > (SCREEN_WIDTH + 16)) {
             ghost_screen_x -= WORLD_WIDTH;
         }
 

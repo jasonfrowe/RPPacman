@@ -13,6 +13,7 @@ void reset_ghosts_to_initial_positions(void);
 void clear_all_active_score_popups(void);
 bool is_game_motion_started(void);
 void start_title_screen(void);
+void start_warm_title_screen(void);
 void start_normal_game(void);
 
 #endif // GHOST_H

@@ -112,7 +112,7 @@ void tile_mode2_title_map_init(void) {
     xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, x_wrap, false);
     xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, y_wrap, false);
     xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, x_pos_px, 0);
-    xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, y_pos_px, 0);
+    xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, y_pos_px, 100);
     xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, width_tiles,      TITLE_MAP_WIDTH);
     xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, height_tiles,     TITLE_MAP_HEIGHT);
     xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, xram_data_ptr,    TITLE_MAP_DATA);     // tile ID grid
@@ -193,6 +193,88 @@ void restore_title_palette(void) {
     for (int i = 0; i < 16; i++) {
         RIA.rw0 = titles_palette[i] & 0xFF;
         RIA.rw0 = titles_palette[i] >> 8;
+    }
+}
+
+// Scale RGB555 palette color (scale_num / scale_den)
+// Desaturates towards neutral gray during fade transitions to prevent color flashes
+static uint16_t scale_rgb555(uint16_t color, uint8_t num, uint8_t den, bool white_boost, uint8_t white_step) {
+    uint8_t r = (color >> 10) & 0x1F;
+    uint8_t g = (color >> 5)  & 0x1F;
+    uint8_t b =  color        & 0x1F;
+
+    if (white_boost) {
+        // white_step 1..4: scale r,g,b towards 31 (0x1F)
+        r = r + (((31 - r) * white_step) / 4);
+        g = g + (((31 - g) * white_step) / 4);
+        b = b + (((31 - b) * white_step) / 4);
+    } else {
+        // Compute perceived luminance Y = 0.3R + 0.59G + 0.11B
+        uint8_t gray = (uint8_t)((3 * (uint16_t)r + 6 * (uint16_t)g + 1 * (uint16_t)b) / 10);
+
+        // Blend color towards gray as num / den gets smaller (desaturation factor)
+        // factor = num / den (e.g. 1/4 -> 75% gray, 3/4 -> 25% gray, 4/4 -> 0% gray)
+        r = (r * num + gray * (den - num)) / den;
+        g = (g * num + gray * (den - num)) / den;
+        b = (b * num + gray * (den - num)) / den;
+
+        // Apply brightness scaling
+        r = (r * num) / den;
+        g = (g * num) / den;
+        b = (b * num) / den;
+    }
+
+    return (uint16_t)((r << 10) | (g << 5) | b);
+}
+
+void set_title_palette_scaled(uint8_t num, uint8_t den, bool white_boost, uint8_t white_step, bool cold_start) {
+    RIA.addr0 = TITLE_PALETTE_ADDR;
+    RIA.step0 = 1;
+    for (int i = 0; i < 16; i++) {
+        uint16_t c = titles_palette[i];
+        if (cold_start && (i == 5 || i == 7)) {
+            c = 0x0000;
+        }
+        if (num == 0 && !white_boost) {
+            c = 0x0000;
+        } else {
+            c = scale_rgb555(c, num, den, white_boost, white_step);
+        }
+        RIA.rw0 = c & 0xFF;
+        RIA.rw0 = c >> 8;
+    }
+}
+
+void set_font_palette_black(void) {
+    RIA.addr0 = FONT_PALETTE_ADDR;
+    RIA.step0 = 1;
+    for (int i = 0; i < 16; i++) {
+        RIA.rw0 = 0x00;
+        RIA.rw0 = 0x00;
+    }
+}
+
+void restore_font_palette(void) {
+    RIA.addr0 = FONT_PALETTE_ADDR;
+    RIA.step0 = 1;
+    for (int i = 0; i < 16; i++) {
+        RIA.rw0 = font_palette[i] & 0xFF;
+        RIA.rw0 = font_palette[i] >> 8;
+    }
+}
+
+void set_font_palette_scaled(uint8_t num, uint8_t den) {
+    RIA.addr0 = FONT_PALETTE_ADDR;
+    RIA.step0 = 1;
+    for (int i = 0; i < 16; i++) {
+        uint16_t c = font_palette[i];
+        if (num == 0) {
+            c = 0x0000;
+        } else {
+            c = scale_rgb555(c, num, den, false, 0);
+        }
+        RIA.rw0 = c & 0xFF;
+        RIA.rw0 = c >> 8;
     }
 }
 

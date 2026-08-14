@@ -272,19 +272,31 @@ void trigger_power_pellet_frightened(void) {
 
 // Check collision between Pac-Man and ghosts
 void check_pacman_ghost_collisions(void) {
-    int16_t pm_center_x = player.world_px + 8;
-    int16_t pm_center_y = player.world_py + 8;
+    // According to Arcade Pac-Man specifications (pacman.holenet.info):
+    // Collision detection compares sprite visual bounding boxes.
+    // Pac-Man sprite: (player.world_px + VISUAL_X_OFFSET) x (player.world_py + VISUAL_Y_OFFSET), 16x16
+    // Ghost sprite: (g->world_px - 3) x (g->world_py - 3), 16x16
+    // Effective collision occurs when sprite bounding boxes overlap with a tight 3px inner margin.
+    // Pac-Man screen bounding box top-left is (player.x_pos_px - 3, player.y_pos_px).
+    // Ghost screen bounding box top-left is ghosts[i].x_pos_px, ghosts[i].y_pos_px.
+    // 4x4px hit box centered within the 16x16px sprite frame (+6 to +9)
+    int16_t pm_left   = (player.x_pos_px - 3) + 6;
+    int16_t pm_right  = (player.x_pos_px - 3) + 9;
+    int16_t pm_top    = player.y_pos_px + 6;
+    int16_t pm_bottom = player.y_pos_px + 9;
 
     for (int i = 0; i < NGHOSTS; i++) {
         ghost_struct *g = &ghosts[i];
-        
-        int16_t ghost_center_x = g->world_px + 8;
-        int16_t ghost_center_y = g->world_py + 8;
 
-        int16_t dx = pm_center_x - ghost_center_x;
-        int16_t dy = pm_center_y - ghost_center_y;
+        int16_t g_left   = g->x_pos_px + 6;
+        int16_t g_right  = g->x_pos_px + 9;
+        int16_t g_top    = g->y_pos_px + 6;
+        int16_t g_bottom = g->y_pos_px + 9;
 
-        if (dx >= -6 && dx <= 6 && dy >= -6 && dy <= 6) {
+        bool overlap = (pm_left <= g_right && pm_right >= g_left &&
+                        pm_top <= g_bottom && pm_bottom >= g_top);
+
+        if (overlap) {
             if (g->mode == GHOST_MODE_FRIGHTENED && g->state == GHOST_STATE_OUTSIDE) {
                 // Pac-Man eats the frightened ghost!
                 g->mode = GHOST_MODE_EATEN;
@@ -464,18 +476,35 @@ static void update_ghost_outside_movement(int ghost_index) {
                 target_tx = 23;
                 target_ty = 12;
             } else if (g->mode == GHOST_MODE_FRIGHTENED) {
-                // Frightened ghosts path pseudo-randomly / away from Pac-Man
-                // We pick target away from Pac-Man
+                // Frightened ghosts select target using pseudo-random tile based on current tile & ghost index
+                // This ensures deterministic, valid maze pathfinding away from Pac-Man without pushing targets out of bounds
                 int16_t pac_tx = (int16_t)(player.world_px / MAZE_TILES_SIZE_PX);
                 int16_t pac_ty = (int16_t)(player.world_py / MAZE_TILES_SIZE_PX);
-                target_tx = cur_tx + (cur_tx - pac_tx);
-                target_ty = cur_ty + (cur_ty - pac_ty);
+
+                // Corner scatter targets for frightened mode as fallback directions
+                static const int16_t CORNER_TX[4] = { 0, 46, 0, 46 };
+                static const int16_t CORNER_TY[4] = { 0, 0, 29, 29 };
+                uint8_t corner_idx = (cur_tx + cur_ty + ghost_index) % 4;
+
+                target_tx = CORNER_TX[corner_idx];
+                target_ty = CORNER_TY[corner_idx];
+
+                // If Pac-Man is close, head towards opposite corner of Pac-Man
+                if (pac_tx < 23 && pac_ty < 15) {
+                    target_tx = 46; target_ty = 29;
+                } else if (pac_tx >= 23 && pac_ty < 15) {
+                    target_tx = 0; target_ty = 29;
+                } else if (pac_tx < 23 && pac_ty >= 15) {
+                    target_tx = 46; target_ty = 0;
+                } else {
+                    target_tx = 0; target_ty = 0;
+                }
             } else {
                 compute_ghost_target_tile(ghost_index, &target_tx, &target_ty);
             }
 
             int8_t opposite_dir = get_opposite_dir(g->dir);
-            int8_t best_dir = g->dir;
+            int8_t best_dir = DIR_NONE;
             int32_t min_dist_sq = 0x7FFFFFFF;
 
             static const int8_t EVAL_DIRS[4] = { DIR_UP, DIR_LEFT, DIR_DOWN, DIR_RIGHT };
@@ -507,6 +536,18 @@ static void update_ghost_outside_movement(int ghost_index) {
                         min_dist_sq = dist_sq;
                         best_dir = test_dir;
                     }
+                }
+            }
+
+            // Fallback: If no valid non-reversing direction was found, check if continuing current direction is valid,
+            // otherwise force reversing opposite direction to prevent stepping into walls.
+            if (best_dir == DIR_NONE) {
+                if (can_step_dir(g->world_px, g->world_py, g->dir)) {
+                    best_dir = g->dir;
+                } else if (can_step_dir(g->world_px, g->world_py, opposite_dir)) {
+                    best_dir = opposite_dir;
+                } else {
+                    best_dir = g->dir;
                 }
             }
 
@@ -740,7 +781,7 @@ void ghost_update_motion(void) {
             }
 
             if (player.lives == 0) {
-                start_title_screen();
+                start_warm_title_screen();
             } else {
                 s_game_motion_started = true;
 

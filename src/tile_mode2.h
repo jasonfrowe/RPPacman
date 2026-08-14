@@ -50,11 +50,11 @@ static const uint16_t titles_palette[16] = {
     0x01A6,
     0x036D,
     0x05F7,
-    0xFA28,
+    0x59A0,
     0xFDAC,
-    0xFEF8,
+    0xF5AF,
     0xFFFF,
-    0x1AB4,
+    0x0AB6,
     0x0020,
     0x0020,
     0x0020,
@@ -74,6 +74,10 @@ void set_maze_palette_black(void);
 void restore_maze_palette(void);
 void set_title_palette_black(void);
 void restore_title_palette(void);
+void set_title_palette_scaled(uint8_t num, uint8_t den, bool white_boost, uint8_t white_step, bool cold_start);
+void set_font_palette_black(void);
+void restore_font_palette(void);
+void set_font_palette_scaled(uint8_t num, uint8_t den);
 
 void update_player_score_display(uint32_t score);
 void update_player_lives_display(uint8_t lives);

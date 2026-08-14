@@ -14,7 +14,19 @@ typedef enum {
     STATE_GAMEPLAY
 } game_state_t;
 
+typedef enum {
+    TITLE_SUBSTATE_COLD_SLIDE,   // 240 frames sliding title map y_pos_px from 240 down to 0
+    TITLE_SUBSTATE_PRESS_START,  // Flashing "PRESS START BUTTON" every 32 frames until START
+    TITLE_SUBSTATE_MENU_READY,   // Normal menu ("NORMAL", "EXTRA", "OPTIONS" with Pac-Man cursor)
+    TITLE_SUBSTATE_WARM_FADE_OUT,// 8 frames fade to black from gameplay
+    TITLE_SUBSTATE_WARM_BLACK,   // 16 frames black screen
+    TITLE_SUBSTATE_WARM_FADE_IN   // 8 frames fade in title screen
+} title_substate_t;
+
 static game_state_t s_game_state = STATE_TITLE;
+static title_substate_t s_title_substate = TITLE_SUBSTATE_COLD_SLIDE;
+static uint16_t s_title_timer = 0;
+
 static uint8_t s_menu_selection = 0; // 0: NORMAL, 1: EXTRAS, 2: OPTION
 static uint8_t s_pacman_anim_timer = 0;
 static uint8_t s_pacman_anim_frame = 6; // 6 or 7
@@ -29,51 +41,78 @@ void hide_all_ghosts(void) {
     }
 }
 
+static void set_pacman_cursor_hidden(void) {
+    player.x_pos_px = -32;
+    player.y_pos_px = -32;
+    xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, x_pos_px, -32);
+    xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, y_pos_px, -32);
+}
+
 void start_title_screen(void) {
     s_game_state = STATE_TITLE;
+    s_title_substate = TITLE_SUBSTATE_COLD_SLIDE;
+    s_title_timer = 0;
     s_menu_selection = 0;
 
-    // 1. Hide maze by setting maze palette to all black & restore title palette
+    // 1. Hide maze by setting maze palette to all black
     set_maze_palette_black();
-    restore_title_palette();
 
-    // 2. Hide ghost sprites & reset/hide all prize sprites and munchers
+    // 2. Cold start title palette setup:
+    // Restore normal title palette first, then override indices 5 and 7 to 0x0000
+    restore_title_palette();
+    RIA.addr0 = TITLE_PALETTE_ADDR + (5 * 2);
+    RIA.step0 = 1;
+    RIA.rw0 = 0x00;
+    RIA.rw0 = 0x00;
+
+    RIA.addr0 = TITLE_PALETTE_ADDR + (7 * 2);
+    RIA.step0 = 1;
+    RIA.rw0 = 0x00;
+    RIA.rw0 = 0x00;
+
+    // Set font palette to black initially
+    set_font_palette_black();
+
+    // 3. Set y_pos_px for TITLE_MAP_CONFIG to 240
+    xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, y_pos_px, 240);
+
+    // 4. Hide ghost and pacman cursor sprites, clear menu text
     hide_all_ghosts();
+    set_pacman_cursor_hidden();
     reset_prizes_and_mazes_level();
 
-    // 3. Write menu and header text to TEXT_MAP_CONFIG
-    write_text_to_text_map(12, 6,  "PICOCOMPUTER 6502");
-    write_text_to_text_map(17, 8,  "NORMAL");
-    write_text_to_text_map(17, 9,  "EXTRA ");
-    write_text_to_text_map(17, 10, "OPTIONS");
+    write_text_to_text_map(11, 6,  "                  ");
+    write_text_to_text_map(11, 12, "                  ");
+    write_text_to_text_map(17, 8,  "       ");
+    write_text_to_text_map(17, 9,  "       ");
+    write_text_to_text_map(17, 10, "       ");
+}
 
-    // 4. Position Pac-Man sprite to the left of "NORMAL" (117px, y offset +1)
-    int16_t cursor_x = 117;
-    int16_t cursor_y = (8 + s_menu_selection) * 16 + 1;
+void start_warm_title_screen(void) {
+    s_game_state = STATE_TITLE;
+    s_title_substate = TITLE_SUBSTATE_WARM_FADE_OUT;
+    s_title_timer = 0;
+    s_menu_selection = 0;
 
-    player.x_pos_px = cursor_x;
-    player.y_pos_px = cursor_y;
-    player.frame = 6;
-    s_pacman_anim_timer = 0;
-    s_pacman_anim_frame = 6;
-
-    xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, x_pos_px, player.x_pos_px);
-    xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, y_pos_px, player.y_pos_px);
-    xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (player.frame * SPRITE_FRAME_SIZE)));
+    hide_all_ghosts();
+    set_pacman_cursor_hidden();
+    reset_prizes_and_mazes_level();
 }
 
 void start_normal_game(void) {
     s_game_state = STATE_GAMEPLAY;
 
-    // 1. Clear menu text from TEXT_MAP_CONFIG & hide title screen (set TITLE_PALETTE_ADDR to all black 0x0000)
-    write_text_to_text_map(12, 6,  "                 ");
+    // 1. Clear text map & hide title screen
+    write_text_to_text_map(11, 6,  "                  ");
+    write_text_to_text_map(11, 12, "                  ");
     write_text_to_text_map(17, 8,  "       ");
     write_text_to_text_map(17, 9,  "       ");
     write_text_to_text_map(17, 10, "       ");
     set_title_palette_black();
 
-    // 2. Restore maze palette
+    // 2. Restore maze and font palettes
     restore_maze_palette();
+    restore_font_palette();
 
     // 3. Reset ghosts to initial positions and restore sprite visibility
     reset_ghosts_to_initial_positions();
@@ -135,12 +174,13 @@ int main(void)
         return 1;
     }
 
-    // Start on Title Screen
+    // Start on Title Screen (Cold Start)
     start_title_screen();
 
     static bool prev_up = false;
     static bool prev_down = false;
     static bool prev_action = false;
+    static bool prev_start = false;
 
     // Main loop
     while (true) {
@@ -149,57 +189,162 @@ int main(void)
 
         bool press_up = (actions.up && !prev_up);
         bool press_down = (actions.down && !prev_down);
-        // Use gamepad 'A' button (mapped to actions.bomb) to start the game
         bool press_action = (actions.bomb && !prev_action);
+        bool press_start = (actions.start && !prev_start);
 
         prev_up = actions.up;
         prev_down = actions.down;
         prev_action = actions.bomb;
+        prev_start = actions.start;
 
         if (s_game_state == STATE_TITLE) {
-            // Menu Navigation
-            if (press_up) {
-                if (s_menu_selection > 0) {
-                    s_menu_selection--;
-                } else {
-                    s_menu_selection = 2;
+            switch (s_title_substate) {
+                case TITLE_SUBSTATE_COLD_SLIDE: {
+                    // Over 240 frames, slide y_pos_px from 240 down to 0
+                    if (s_title_timer < 240) {
+                        int16_t current_y = 240 - (int16_t)s_title_timer;
+                        xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, y_pos_px, current_y);
+                        s_title_timer++;
+                    } else {
+                        xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, y_pos_px, 0);
+
+                        // Restore normal title and font palettes
+                        restore_title_palette();
+                        restore_font_palette();
+
+                        // Write "PICOCOMPUTER  6502" at (11, 6) and "PRESS START BUTTON" at (11, 12)
+                        write_text_to_text_map(11, 6,  "PICOCOMPUTER  6502");
+                        write_text_to_text_map(11, 12, "PRESS START BUTTON");
+
+                        s_title_substate = TITLE_SUBSTATE_PRESS_START;
+                        s_title_timer = 0;
+                    }
+                    break;
                 }
-            } else if (press_down) {
-                if (s_menu_selection < 2) {
-                    s_menu_selection++;
-                } else {
-                    s_menu_selection = 0;
+
+                case TITLE_SUBSTATE_PRESS_START: {
+                    s_title_timer++;
+
+                    // Flashes on/off every 32 frames (0..31 ON, 32..63 OFF)
+                    bool text_on = ((s_title_timer % 64) < 32);
+                    if (text_on) {
+                        write_text_to_text_map(11, 12, "PRESS START BUTTON");
+                    } else {
+                        write_text_to_text_map(11, 12, "                  ");
+                    }
+
+                    // Check for Start button
+                    if (press_start || press_action) {
+                        write_text_to_text_map(11, 12, "                  ");
+                        write_text_to_text_map(11, 6,  "PICOCOMPUTER  6502");
+                        write_text_to_text_map(17, 8,  "NORMAL");
+                        write_text_to_text_map(17, 9,  "EXTRA ");
+                        write_text_to_text_map(17, 10, "OPTIONS");
+
+                        s_menu_selection = 0;
+                        s_title_substate = TITLE_SUBSTATE_MENU_READY;
+                    }
+                    break;
+                }
+
+                case TITLE_SUBSTATE_MENU_READY: {
+                    // Menu Navigation
+                    if (press_up) {
+                        if (s_menu_selection > 0) {
+                            s_menu_selection--;
+                        } else {
+                            s_menu_selection = 2;
+                        }
+                    } else if (press_down) {
+                        if (s_menu_selection < 2) {
+                            s_menu_selection++;
+                        } else {
+                            s_menu_selection = 0;
+                        }
+                    }
+
+                    // Select Menu Option (Gamepad 'A' button)
+                    if (press_action) {
+                        if (s_menu_selection == 0) {
+                            start_normal_game();
+                        }
+                    }
+
+                    if (s_game_state == STATE_TITLE) {
+                        // Animate Pac-Man cursor sprite (tiles 6 and 7, 4 frames each)
+                        s_pacman_anim_timer++;
+                        if (s_pacman_anim_timer >= 4) {
+                            s_pacman_anim_timer = 0;
+                            s_pacman_anim_frame = (s_pacman_anim_frame == 6) ? 7 : 6;
+                        }
+
+                        // Position Pac-Man cursor to the left of the selected menu item (117px, y offset +1)
+                        player.x_pos_px = 117;
+                        player.y_pos_px = (8 + s_menu_selection) * 16 + 1;
+                        player.frame = s_pacman_anim_frame;
+
+                        xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, x_pos_px, player.x_pos_px);
+                        xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, y_pos_px, player.y_pos_px);
+                        xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (player.frame * SPRITE_FRAME_SIZE)));
+                    }
+                    break;
+                }
+
+                case TITLE_SUBSTATE_WARM_FADE_OUT: {
+                    // 8 frames: fade title & font & maze palettes out to black (every 2 frames)
+                    if (s_title_timer < 8) {
+                        uint8_t step = 4 - (s_title_timer / 2); // 4, 3, 2, 1
+                        set_title_palette_scaled(step - 1, 4, false, 0, false);
+                        set_font_palette_scaled(step - 1, 4);
+                        s_title_timer++;
+                    } else {
+                        set_title_palette_black();
+                        set_font_palette_black();
+                        set_maze_palette_black();
+                        s_title_substate = TITLE_SUBSTATE_WARM_BLACK;
+                        s_title_timer = 0;
+                    }
+                    break;
+                }
+
+                case TITLE_SUBSTATE_WARM_BLACK: {
+                    // 16 frames on black screen
+                    if (s_title_timer < 16) {
+                        s_title_timer++;
+                    } else {
+                        // Prepare title screen for fade in
+                        xram0_struct_set(TITLE_MAP_CONFIG, vga_mode2_config_t, y_pos_px, 0);
+
+                        write_text_to_text_map(11, 6,  "PICOCOMPUTER  6502");
+                        write_text_to_text_map(17, 8,  "NORMAL");
+                        write_text_to_text_map(17, 9,  "EXTRA ");
+                        write_text_to_text_map(17, 10, "OPTIONS");
+
+                        s_menu_selection = 0;
+                        s_title_substate = TITLE_SUBSTATE_WARM_FADE_IN;
+                        s_title_timer = 0;
+                    }
+                    break;
+                }
+
+                case TITLE_SUBSTATE_WARM_FADE_IN: {
+                    // 8 frames: fade in title & font palettes from black (every 2 frames)
+                    if (s_title_timer < 8) {
+                        uint8_t step = (s_title_timer / 2) + 1; // 1, 2, 3, 4
+                        set_title_palette_scaled(step, 4, false, 0, false);
+                        set_font_palette_scaled(step, 4);
+                        s_title_timer++;
+                    } else {
+                        restore_title_palette();
+                        restore_font_palette();
+                        s_title_substate = TITLE_SUBSTATE_MENU_READY;
+                        s_title_timer = 0;
+                    }
+                    break;
                 }
             }
 
-            // Select Menu Option
-            if (press_action) {
-                if (s_menu_selection == 0) {
-                    // "NORMAL" selected -> Start Gameplay!
-                    start_normal_game();
-                }
-            }
-
-            if (s_game_state == STATE_TITLE) {
-                // Animate Pac-Man cursor sprite (tiles 6 and 7, 4 frames each)
-                s_pacman_anim_timer++;
-                if (s_pacman_anim_timer >= 4) {
-                    s_pacman_anim_timer = 0;
-                    s_pacman_anim_frame = (s_pacman_anim_frame == 6) ? 7 : 6;
-                }
-
-                // Position Pac-Man cursor to the left of the selected menu item (117px, y offset +1)
-                player.x_pos_px = 117;
-                player.y_pos_px = (8 + s_menu_selection) * 16 + 1;
-                player.frame = s_pacman_anim_frame;
-
-                xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, x_pos_px, player.x_pos_px);
-                xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, y_pos_px, player.y_pos_px);
-                xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (player.frame * SPRITE_FRAME_SIZE)));
-
-                // Keep ghosts hidden during Title Screen
-                hide_all_ghosts();
-            }
+            hide_all_ghosts();
         } else {
             // 2. STATE_GAMEPLAY Updates
             player_update_motion(&actions);
@@ -211,7 +356,7 @@ int main(void)
 
             if (is_game_timer_expired()) {
                 // 5 minute timer expired -> End game and return to Title Screen
-                start_title_screen();
+                start_warm_title_screen();
             } else {
                 // Update maze palette animation
                 tile_mode2_palette_update(frame);
