@@ -120,10 +120,10 @@ void title_anim_update(void) {
             uint8_t pac_frame = ((s_frame_cnt / 4) % 2 == 0) ? 6 : 7;
             set_sprite_slot(MAZE_MUNCHERS_CONFIG, 0, pac_x, pac_y, pac_frame);
 
-            // Trailing pellet/dot at offset -16, -8 relative to Pac-Man -> (pac_x - 16, pac_y - 8) = (pac_x - 16, 144)
+            // Trailing pellet/dot at offset -16, -12 relative to Pac-Man -> (pac_x - 16, pac_y - 12) = (pac_x - 16, 140)
             // Alternate frames 153 and 154 every 4 frames
             uint8_t dot_frame = ((s_frame_cnt / 4) % 2 == 0) ? 153 : 154;
-            set_sprite_slot(MAZE_MUNCHERS_CONFIG, 1, pac_x - 16, pac_y - 8, dot_frame);
+            set_sprite_slot(MAZE_MUNCHERS_CONFIG, 1, pac_x - 16, pac_y - 12, dot_frame);
 
             // Blue Ghost chases Pac-Man at 1 px/frame, plus 1 extra px every 12th frame (1.083 px/frame average)
             // Ghost starts trailing behind Pac-Man at -64 (48px behind Pac-Man's starting -16)
@@ -154,10 +154,10 @@ void title_anim_update(void) {
             uint8_t ghost_frame = ((s_frame_cnt / 4) % 2 == 0) ? 40 : 41; // Frightened ghost frames 40 and 41
             set_sprite_slot(MAZE_MUNCHERS_CONFIG, 0, ghost_x, ghost_y, ghost_frame);
 
-            // Trailing dot at position +16, -8 relative to ghost -> (ghost_x + 16, ghost_y - 8)
+            // Trailing dot at position +16, -12 relative to ghost -> (ghost_x + 16, ghost_y - 12)
             // Alternate frames 153 and 154 every 4 frames
             uint8_t dot_frame = ((s_frame_cnt / 4) % 2 == 0) ? 153 : 154;
-            set_sprite_slot(MAZE_MUNCHERS_CONFIG, 1, ghost_x + 16, ghost_y - 8, dot_frame);
+            set_sprite_slot(MAZE_MUNCHERS_CONFIG, 1, ghost_x + 16, ghost_y - 12, dot_frame);
 
             // Large Pac-Man trails ghost with initial separation +32px (total separation 80px: bigpac_x = ghost_x + 80)
             // Large Pac-Man moves slightly faster: 2px every 12 frames (1.167 px/frame average)
@@ -224,16 +224,20 @@ void title_anim_update(void) {
                              BIGPAC_R2_STEPS[pac_step][0], BIGPAC_R2_STEPS[pac_step][1],
                              BIGPAC_R2_STEPS[pac_step][2], BIGPAC_R2_STEPS[pac_step][3]);
 
+            // Trailing dot at position -16, -4 relative to Big Pac-Man top corner -> (bigpac_x - 16, bigpac_y - 4)
+            uint8_t pac_dot_frame = ((s_frame_cnt / 4) % 2 == 0) ? 153 : 154;
+            set_sprite_slot(MAZE_MUNCHERS_CONFIG, 12, bigpac_x - 16, bigpac_y - 4, pac_dot_frame);
+
             // Big Ghosts move slightly faster (+2px every 12 frames)
             int16_t ghost_extra_px = (int16_t)((s_frame_cnt / 12) * 2);
 
-            // Big Ghost 1: starting at -128
+            // Big Ghost 1: starting at -132
             int16_t bg1_x = -132 + (int16_t)s_frame_cnt + ghost_extra_px;
-            int16_t bg1_y = 136;
+            int16_t bg1_y = 138;
 
             // Big Ghost 2: starting at -168
             int16_t bg2_x = -168 + (int16_t)s_frame_cnt + ghost_extra_px;
-            int16_t bg2_y = 136;
+            int16_t bg2_y = 138;
 
             // Big Ghost animation: base frames 137,138,139,140 and 145,146,147,148
             // Every 4th frame update to 141,142,143,144 and 149,150,151,152
@@ -252,8 +256,7 @@ void title_anim_update(void) {
             set_2x2_compound(MAZE_MUNCHERS_CONFIG, 4, bg1_x, bg1_y, bg1_tl, bg1_tr, bg1_bl, bg1_br);
             set_2x2_compound(MAZE_MUNCHERS_CONFIG, 8, bg2_x, bg2_y, bg2_tl, bg2_tr, bg2_bl, bg2_br);
 
-            // Hide remaining slots
-            park_sprites(MAZE_MUNCHERS_CONFIG + 12 * sizeof(vga_mode5_sprite_t), 0);
+            // Hide remaining unused slots
             park_sprites(GHOST_SCORE_CONFIG, NGHOST_SCORE_DISPLAYS);
 
             // After last big ghost (bg2) has left the screen (> 320)
@@ -274,8 +277,12 @@ void title_anim_update(void) {
 
             set_sprite_slot(MAZE_MUNCHERS_CONFIG, 0, ghost_x, ghost_y, ghost_frame);
 
+            // Trailing dot at position -16, -12 relative to Frightened Ghost -> (ghost_x - 16, ghost_y - 12)
+            uint8_t dot_frame = ((s_frame_cnt / 4) % 2 == 0) ? 153 : 154;
+            set_sprite_slot(MAZE_MUNCHERS_CONFIG, 1, ghost_x - 16, ghost_y - 12, dot_frame);
+
             // Hide all remaining slots
-            park_sprites(MAZE_MUNCHERS_CONFIG + 1 * sizeof(vga_mode5_sprite_t), NMAZE_MUNCHERS - 1);
+            park_sprites(MAZE_MUNCHERS_CONFIG + 2 * sizeof(vga_mode5_sprite_t), NMAZE_MUNCHERS - 2);
             park_sprites(GHOST_SCORE_CONFIG, NGHOST_SCORE_DISPLAYS);
 
             if (ghost_x > 320) {

@@ -272,6 +272,9 @@ int main(void)
                         write_text_to_text_map(17, 9,  "EXTRA ");
                         write_text_to_text_map(17, 10, "OPTIONS");
 
+                        // Park all cutscene sprites off-screen when entering menu
+                        title_anim_reset();
+
                         s_menu_selection = 0;
                         s_title_substate = TITLE_SUBSTATE_MENU_READY;
                     }
