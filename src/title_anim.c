@@ -227,12 +227,12 @@ void title_anim_update(void) {
             // Big Ghosts move slightly faster (+2px every 12 frames)
             int16_t ghost_extra_px = (int16_t)((s_frame_cnt / 12) * 2);
 
-            // Big Ghost 1: starting at -120 (trails Big Pac-Man by 88px)
-            int16_t bg1_x = -120 + (int16_t)s_frame_cnt + ghost_extra_px;
+            // Big Ghost 1: starting at -128
+            int16_t bg1_x = -132 + (int16_t)s_frame_cnt + ghost_extra_px;
             int16_t bg1_y = 136;
 
-            // Big Ghost 2: trails Big Ghost 1 by 64px (starting at -184)
-            int16_t bg2_x = -184 + (int16_t)s_frame_cnt + ghost_extra_px;
+            // Big Ghost 2: starting at -168
+            int16_t bg2_x = -168 + (int16_t)s_frame_cnt + ghost_extra_px;
             int16_t bg2_y = 136;
 
             // Big Ghost animation: base frames 137,138,139,140 and 145,146,147,148
