@@ -34,4 +34,5 @@ target_sources(RPPacMan PRIVATE
     src/ghost.c
     src/prizes.c
     src/opl.c
+    src/title_anim.c
 )

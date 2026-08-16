@@ -9,6 +9,7 @@
 #include "ghost.h"
 #include "prizes.h"
 #include "opl.h"
+#include "title_anim.h"
 
 typedef enum {
     STATE_TITLE,
@@ -64,6 +65,7 @@ void start_title_screen(void) {
     s_game_bgm_playing = false;
 
     music_stop();
+    title_anim_reset();
 
     // 1. Hide maze by setting maze palette to all black
     set_maze_palette_black();
@@ -107,6 +109,7 @@ void start_warm_title_screen(void) {
     s_game_bgm_playing = false;
 
     music_stop();
+    title_anim_reset();
     hide_all_ghosts();
     set_pacman_cursor_hidden();
     reset_prizes_and_mazes_level();
@@ -239,6 +242,7 @@ int main(void)
 
                         // Start Title Music (PACMAN02.BIN)
                         music_init("ROM:pacman02");
+                        title_anim_reset();
 
                         s_title_substate = TITLE_SUBSTATE_PRESS_START;
                         s_title_timer = 0;
@@ -256,6 +260,9 @@ int main(void)
                     } else {
                         write_text_to_text_map(11, 12, "                  ");
                     }
+
+                    // Update title screen cutscene animation sequence!
+                    title_anim_update();
 
                     // Check for Start button
                     if (press_start || press_action) {
@@ -293,6 +300,7 @@ int main(void)
                             // "NORMAL" selected -> Begin game start transition sequence!
                             set_pacman_cursor_hidden();
                             music_stop();
+                            title_anim_reset();
                             s_title_substate = TITLE_SUBSTATE_GAME_START_WAIT_40;
                             s_title_timer = 0;
                         }
