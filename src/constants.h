@@ -30,7 +30,7 @@
 #define MAZE_MAP_HEIGHT         30                  // Height of the maze map in tiles
 
 #define SPRITE_DATA            (MAZE_MAP_DATA + MAZE_MAP_DATA_SIZE) // Address for player sprite data
-#define SPRITE_DATA_SIZE       (0x3A80U)            // Size of player sprite data (117 frames * 16x16 = 14976 bytes)
+#define SPRITE_DATA_SIZE       (0x4E80U)            // Size of player sprite data (157 frames * 16x16 = 20096 bytes)
 #define SPRITE_SIZE_PX          16                  // Size of player sprite in pixels
 #define SPRITE_FRAME_SIZE       0x0080U             // 128 bytes per 16x16 4bpp frame
 
