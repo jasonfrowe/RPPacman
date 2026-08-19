@@ -8,9 +8,6 @@
 #include "prizes.h"
 #include "ghost.h"
 
-#define VISUAL_X_OFFSET (-3) // Visual horizontal draw offset (-3px)
-#define VISUAL_Y_OFFSET (-3) // Visual vertical draw offset (-3px)
-
 static int8_t queued_dir = DIR_NONE;
 
 bool is_wall_tile(int16_t world_x, int16_t world_y) {
@@ -541,4 +538,7 @@ void player_update_motion(const input_actions_t *actions) {
         xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, x_pos_px, ghosts[i].x_pos_px);
         xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, y_pos_px, ghosts[i].y_pos_px);
     }
+
+    // Check collisions with ghosts after Pac-Man movement update
+    check_pacman_ghost_collisions();
 }

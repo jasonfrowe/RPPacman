@@ -274,34 +274,41 @@ void trigger_power_pellet_frightened(void) {
     }
 }
 
-// Check collision between Pac-Man and ghosts
+// Check collision between Pac-Man and ghosts using central drawn positions & 4x4 collision box
 void check_pacman_ghost_collisions(void) {
-    // According to Arcade Pac-Man specifications (pacman.holenet.info):
-    // Collision detection compares sprite visual bounding boxes.
-    // Pac-Man sprite: (player.world_px + VISUAL_X_OFFSET) x (player.world_py + VISUAL_Y_OFFSET), 16x16
-    // Ghost sprite: (g->world_px - 3) x (g->world_py - 3), 16x16
-    // Effective collision occurs when sprite bounding boxes overlap with a tight 3px inner margin.
-    // Pac-Man screen bounding box top-left is (player.x_pos_px - 3, player.y_pos_px).
-    // Ghost screen bounding box top-left is ghosts[i].x_pos_px, ghosts[i].y_pos_px.
-    // 4x4px hit box centered within the 16x16px sprite frame (+6 to +9)
-    int16_t pm_left   = (player.x_pos_px - 3) + 6;
-    int16_t pm_right  = (player.x_pos_px - 3) + 9;
-    int16_t pm_top    = player.y_pos_px + 6;
-    int16_t pm_bottom = player.y_pos_px + 9;
+    if (s_death_seq_timer > 0) return;
+
+    // Central drawn position of Pac-Man:
+    // Pac-Man sprite top-left drawn at (player.x_pos_px + VISUAL_X_OFFSET, player.world_py + VISUAL_Y_OFFSET)
+    // Visual center = (drawn_x + 8, drawn_y + 8)
+    int16_t pm_center_x = (player.x_pos_px + VISUAL_X_OFFSET) + 8;
+    int16_t pm_center_y = (player.world_py + VISUAL_Y_OFFSET) + 8;
 
     for (int i = 0; i < NGHOSTS; i++) {
         ghost_struct *g = &ghosts[i];
 
-        int16_t g_left   = g->x_pos_px + 6;
-        int16_t g_right  = g->x_pos_px + 9;
-        int16_t g_top    = g->y_pos_px + 6;
-        int16_t g_bottom = g->y_pos_px + 9;
+        if (g->in_house || g->state != GHOST_STATE_OUTSIDE) continue;
 
-        bool overlap = (pm_left <= g_right && pm_right >= g_left &&
-                        pm_top <= g_bottom && pm_bottom >= g_top);
+        // Central drawn position of Ghost:
+        // Ghost sprite top-left drawn at (g->x_pos_px, g->y_pos_px)
+        // Visual center = (drawn_x + 8, drawn_y + 8)
+        int16_t g_center_x = g->x_pos_px + 8;
+        int16_t g_center_y = g->y_pos_px + 8;
+
+        int16_t dx = g_center_x - pm_center_x;
+        int16_t dy = g_center_y - pm_center_y;
+
+        // Handle vertical tunnel wrapping seam (184px loop)
+        if (dy > (184 / 2)) dy -= 184;
+        else if (dy < -(184 / 2)) dy += 184;
+
+        // 4x4 collision box centered on visual drawn positions:
+        // Both sprites have a 4x4 bounding box centered within the 16x16 frame (offsets +6 to +9).
+        // Two 4x4 boxes overlap when center distance |dx| <= 3 and |dy| <= 3.
+        bool overlap = (dx >= -3 && dx <= 3 && dy >= -3 && dy <= 3);
 
         if (overlap) {
-            if (g->mode == GHOST_MODE_FRIGHTENED && g->state == GHOST_STATE_OUTSIDE) {
+            if (g->mode == GHOST_MODE_FRIGHTENED) {
                 // Pac-Man eats the frightened ghost!
                 g->mode = GHOST_MODE_EATEN;
                 s_ghosts_eaten_chain++;
@@ -323,7 +330,7 @@ void check_pacman_ghost_collisions(void) {
                 // Set 30-frame pause for all motion & trigger eat animation
                 s_eat_pause_timer = 30;
                 trigger_eaten_ghost_animation(i, pts);
-            } else if (g->mode == GHOST_MODE_CHASE && g->state == GHOST_STATE_OUTSIDE) {
+            } else if (g->mode == GHOST_MODE_CHASE) {
                 // Normal ghost catches Pac-Man! Trigger Pac-Man death sequence
                 start_pacman_death_sequence();
                 break;
@@ -1097,6 +1104,27 @@ render_sprites:
             g->frame = base_frame + dir_offset + anim_cell;
         }
 
+        // Update ghost drawn screen coordinates based on latest world positions
+        while (g->world_px < 0) {
+            g->world_px += WORLD_WIDTH;
+        }
+        while (g->world_px >= WORLD_WIDTH) {
+            g->world_px -= WORLD_WIDTH;
+        }
+
+        int16_t ghost_screen_x = g->world_px + maze_dx;
+
+        // Endless horizontal scrolling wrapping for ghost screen coordinates relative to canvas width
+        while (ghost_screen_x < -16) {
+            ghost_screen_x += WORLD_WIDTH;
+        }
+        while (ghost_screen_x > (SCREEN_WIDTH + 16)) {
+            ghost_screen_x -= WORLD_WIDTH;
+        }
+
+        g->x_pos_px = ghost_screen_x + VISUAL_X_OFFSET;
+        g->y_pos_px = g->world_py + VISUAL_Y_OFFSET;
+
         // Update ghost sprite configuration in XRAM
         unsigned current_ghost_config = GHOST_CONFIG + (i * sizeof(vga_mode5_sprite_t));
 
@@ -1112,6 +1140,9 @@ render_sprites:
         xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, y_pos_px, g->y_pos_px);
         xram0_struct_set(current_ghost_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (g->frame * SPRITE_FRAME_SIZE)));
     }
+
+    // Check collisions with ghosts after ghost movement & screen position updates
+    check_pacman_ghost_collisions();
 
     // --- 4. Render Eat Animation Sparkles (NSPARKLES = 6) ---
     // Sparkles appear for the first 30 frames when s_eat_pause_timer > 0

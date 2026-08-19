@@ -33,6 +33,8 @@
 #define SPRITE_DATA_SIZE       (0x4E80U)            // Size of player sprite data (157 frames * 16x16 = 20096 bytes)
 #define SPRITE_SIZE_PX          16                  // Size of player sprite in pixels
 #define SPRITE_FRAME_SIZE       0x0080U             // 128 bytes per 16x16 4bpp frame
+#define VISUAL_X_OFFSET         (-3)                // Visual horizontal draw offset (-3px)
+#define VISUAL_Y_OFFSET         (-3)                // Visual vertical draw offset (-3px)
 
 #define FONT_TILES_DATA        (SPRITE_DATA + SPRITE_DATA_SIZE) // Address for font data
 #define FONT_TILES_DATA_SIZE   (0x3680U)            // Size of font data (109 frames * 16*16 = 13952 bytes)
