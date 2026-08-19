@@ -13,7 +13,7 @@
 // GHOST parameters
 #define NGHOSTS 4                                   // Number of ghosts in the game
 #define NPRIZES 2                                   // Number of prizes in the game
-#define NMAZE_MUNCHERS 12                           // Number of maze transition munchers 
+#define NMAZE_MUNCHERS 13                           // Number of maze transition munchers (and title anim sprite slots)
 #define NSPARKLES 6                                 // Number of sparkle frames for prize animation 
 #define NGHOST_SCORE_DISPLAYS 12                   // 3 score displays of 4 digits (12 slots: slot 0 for eaten ghost, slots 1-2 for eaten prizes)
 

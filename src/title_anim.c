@@ -256,7 +256,8 @@ void title_anim_update(void) {
             set_2x2_compound(MAZE_MUNCHERS_CONFIG, 4, bg1_x, bg1_y, bg1_tl, bg1_tr, bg1_bl, bg1_br);
             set_2x2_compound(MAZE_MUNCHERS_CONFIG, 8, bg2_x, bg2_y, bg2_tl, bg2_tr, bg2_bl, bg2_br);
 
-            // Hide remaining unused slots
+            // Hide remaining unused slots (slot 12 and above)
+            park_sprites(MAZE_MUNCHERS_CONFIG + 13 * sizeof(vga_mode5_sprite_t), NMAZE_MUNCHERS - 13);
             park_sprites(GHOST_SCORE_CONFIG, NGHOST_SCORE_DISPLAYS);
 
             // After last big ghost (bg2) has left the screen (> 320)
