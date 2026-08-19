@@ -473,3 +473,92 @@ void update_game_timer_display(void) {
     RIA.rw0 = sec_tens_tile;
     RIA.rw0 = sec_ones_tile;
 }
+
+// Clear READY / GO region on TEXT_MAP_DATA (rows 4 and 5)
+void clear_ready_go_animation(void) {
+    for (uint8_t ty = 4; ty <= 5; ty++) {
+        uint16_t row_addr = TEXT_MAP_DATA + (ty * TEXT_MAP_WIDTH);
+        RIA.addr0 = row_addr;
+        RIA.step0 = 1;
+        for (uint8_t tx = 0; tx < TEXT_MAP_WIDTH; tx++) {
+            RIA.rw0 = 0;
+        }
+    }
+}
+
+// READY / GO intro animation during the 236-frame PACMAN01.BIN intro
+// READY phase: timer_frame 0..92 (first 93 frames of intro)
+// GO phase: timer_frame 93..235 (remaining 143 frames)
+void update_ready_go_animation(uint16_t timer_frame) {
+    // 2-frame continuous flash loop toggle (0: odd visible, 1: even visible)
+    bool odd_visible = ((timer_frame % 2) == 0);
+
+    if (timer_frame < 93) {
+        // --- READY MESSAGE ---
+        // 16x2 map starting at base tile index 57. Target: tile coord (12, 4)
+        // Row 0: 57..72 (16 tiles), Row 1: 73..88 (16 tiles)
+        // Convergence over first 8 frames (timer_frame 0..7)
+        int16_t offset_x = 0;
+        if (timer_frame < 8) {
+            // Step shrinks linearly from 14 tiles down to 0 tiles
+            offset_x = (int16_t)((7 - timer_frame) * 2);
+        }
+
+        clear_ready_go_animation();
+
+        for (uint8_t r = 0; r < 2; r++) {
+            uint8_t target_ty = 4 + r;
+            uint16_t base_tile = (r == 0) ? 57 : 73;
+
+            for (uint8_t col = 0; col < 16; col++) {
+                uint16_t raw_tile = base_tile + col;
+
+                // Odd-number tiles vs Even-number tiles flashing
+                bool tile_is_odd = ((raw_tile % 2) != 0);
+                uint8_t draw_tile = (tile_is_odd == odd_visible) ? (uint8_t)raw_tile : 0;
+
+                if (draw_tile != 0) {
+                    // Spread tiles out symmetrically: left half shifts left (-offset_x), right half shifts right (+offset_x)
+                    int16_t dest_tx = (int16_t)(12 + col);
+                    if (col < 8) {
+                        dest_tx -= offset_x;
+                    } else {
+                        dest_tx += offset_x;
+                    }
+
+                    if (dest_tx >= 0 && dest_tx < TEXT_MAP_WIDTH) {
+                        RIA.addr0 = TEXT_MAP_DATA + (target_ty * TEXT_MAP_WIDTH) + dest_tx;
+                        RIA.step0 = 1;
+                        RIA.rw0 = draw_tile;
+                    }
+                }
+            }
+        }
+    } else {
+        // --- GO MESSAGE ---
+        // 10x2 grid starting at base tile index 89. Target: tile coord (15, 4)
+        // Row 0: 89..98 (10 tiles), Row 1: 99..108 (10 tiles)
+        clear_ready_go_animation();
+
+        for (uint8_t r = 0; r < 2; r++) {
+            uint8_t target_ty = 4 + r;
+            uint16_t base_tile = (r == 0) ? 89 : 99;
+
+            for (uint8_t col = 0; col < 10; col++) {
+                uint16_t raw_tile = base_tile + col;
+
+                bool tile_is_odd = ((raw_tile % 2) != 0);
+                uint8_t draw_tile = (tile_is_odd == odd_visible) ? (uint8_t)raw_tile : 0;
+
+                if (draw_tile != 0) {
+                    uint8_t dest_tx = 15 + col;
+                    if (dest_tx < TEXT_MAP_WIDTH) {
+                        RIA.addr0 = TEXT_MAP_DATA + (target_ty * TEXT_MAP_WIDTH) + dest_tx;
+                        RIA.step0 = 1;
+                        RIA.rw0 = draw_tile;
+                    }
+                }
+            }
+        }
+    }
+}

@@ -25,7 +25,7 @@ typedef enum {
     TITLE_SUBSTATE_GAME_START_BLACK_18,   // 18 frames black screen wait
     TITLE_SUBSTATE_GAME_START_FADE_IN,    // 8 frames fade in maze with Pac-Man & ghosts at start positions
     TITLE_SUBSTATE_GAME_START_WAIT_20,    // 20 frames wait with maze revealed
-    TITLE_SUBSTATE_GAME_START_INTRO_MUSIC,// 236 frames wait while playing PACMAN01.BIN intro theme
+    TITLE_SUBSTATE_GAME_START_INTRO_MUSIC,// 246 frames wait while playing PACMAN01.BIN intro theme
     TITLE_SUBSTATE_WARM_FADE_OUT,         // 8 frames fade to black from gameplay
     TITLE_SUBSTATE_WARM_BLACK,            // 16 frames black screen
     TITLE_SUBSTATE_WARM_FADE_IN            // 8 frames fade in title screen
@@ -425,11 +425,15 @@ int main(void)
                 }
 
                 case TITLE_SUBSTATE_GAME_START_INTRO_MUSIC: {
-                    // 236 frames wait while playing intro music PACMAN01.BIN
-                    if (s_title_timer < 236) {
+                    // 246 frames wait while playing intro music PACMAN01.BIN
+                    update_ready_go_animation(s_title_timer);
+
+                    if (s_title_timer < 246) {
                         s_title_timer++;
                     } else {
-                        // Intro music complete -> Start game!
+                        // Intro music complete -> Clear READY/GO message & start game!
+                        clear_ready_go_animation();
+
                         s_game_state = STATE_GAMEPLAY;
                         s_game_bgm_playing = false;
 

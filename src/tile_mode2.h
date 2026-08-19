@@ -88,6 +88,9 @@ void reset_game_timer(void);
 void update_game_timer_display(void);
 bool is_game_timer_expired(void);
 
+void update_ready_go_animation(uint16_t timer_frame);
+void clear_ready_go_animation(void);
+
 extern void tile_mode2_palette_update(uint8_t frame);
 
 #endif // TILE_MODE2_H
