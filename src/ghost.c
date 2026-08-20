@@ -69,7 +69,7 @@ static uint16_t s_frightened_timer = 0;
 static uint16_t s_frightened_max_duration = 0;
 static uint16_t s_ghosts_eaten_chain = 0; // Continuous combo counter across Power Pellets!
 
-bool is_eat_pause_active(void) {
+bool is_eat_pause_active(void) { 
     return s_eat_pause_timer > 0;
 }
 

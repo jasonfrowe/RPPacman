@@ -1,4 +1,6 @@
 {
+    "cmake.defaultConfigurePreset": "local/llvm-mos/Release",
+    "cmake.defaultBuildPreset": "local/llvm-mos/Release",
     "cmake.showSystemKits": false,
     "cmake.options.advanced": {
         "launch": {

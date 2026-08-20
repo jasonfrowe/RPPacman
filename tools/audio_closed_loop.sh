@@ -19,10 +19,33 @@ set -euo pipefail
 #   --build-cmd "cmake --build build" \
 #   --update-cmd "echo update patches here"
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+cd "${REPO_ROOT}"
+
+FFMPEG_BIN="${FFMPEG_BIN:-$(command -v ffmpeg || true)}"
+if [[ -z "${FFMPEG_BIN}" ]]; then
+  for candidate in /opt/homebrew/bin/ffmpeg /usr/local/bin/ffmpeg /opt/local/bin/ffmpeg /usr/bin/ffmpeg; do
+    if [[ -x "${candidate}" ]]; then
+      FFMPEG_BIN="${candidate}"
+      break
+    fi
+  done
+fi
+if [[ -z "${FFMPEG_BIN}" ]]; then
+  echo "ffmpeg not found on PATH; install FFmpeg or set FFMPEG_BIN." >&2
+  exit 1
+fi
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python || true)}"
+if [[ -z "${PYTHON_BIN}" ]]; then
+  echo "Python interpreter not found on PATH" >&2
+  exit 1
+fi
+
 ITERATIONS="3"
-AUDIO_DEVICE=""
-ROM="build/RPPacMan.rp6502"
-REFERENCE="NSF/03_Normal_Mode.flac"
+AUDIO_DEVICE="${AUDIO_DEVICE:-0}"
+ROM="build/llvm-mos/release/RPPacMan.rp6502"
+REFERENCE="NSF/track0.flac"
 CAPTURE_DIR="captures/loop"
 EMU_SECONDS="90"
 TRIM_DURATION="60"
@@ -38,10 +61,10 @@ COMPARE_DURATION="60"
 
 usage() {
   cat <<EOF
-Usage: $0 --audio-device N [options]
+Usage: $0 [--audio-device DEVICE] [options]
 
-Required:
-  --audio-device N           AVFoundation audio device index
+Options:
+  --audio-device DEVICE      AVFoundation device index or name (default: BlackHole 2ch)
 
 Options:
   --iterations N             Number of iterations (default: ${ITERATIONS})
@@ -152,6 +175,12 @@ if [[ -z "${AUDIO_DEVICE}" ]]; then
   exit 2
 fi
 
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python || true)}"
+if [[ -z "${PYTHON_BIN}" ]]; then
+  echo "Python interpreter not found on PATH" >&2
+  exit 1
+fi
+
 if [[ ! -f "${REFERENCE}" ]]; then
   echo "Reference not found: ${REFERENCE}" >&2
   exit 1
@@ -192,7 +221,7 @@ for i in $(seq 1 "${ITERATIONS}"); do
   ./tools/capture_emu_audio.sh "${cap_args[@]}"
 
   echo "[loop] Compare step"
-  /Users/jasonrowe/Software/rp6502/RPPacman/.venv/bin/python tools/audio_compare.py \
+  "${PYTHON_BIN}" tools/audio_compare.py \
     --reference "${REFERENCE}" \
     --candidate "${take_file}" \
     --start "${COMPARE_START}" \

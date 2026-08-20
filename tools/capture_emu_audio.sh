@@ -18,7 +18,20 @@ set -euo pipefail
 
 ROM="build/RPPacMan.rp6502"
 EMU="./tools/rp6502-emu"
-AUDIO_DEVICE=""
+AUDIO_DEVICE="${AUDIO_DEVICE:-0}"
+FFMPEG_BIN="${FFMPEG_BIN:-$(command -v ffmpeg || true)}"
+if [[ -z "${FFMPEG_BIN}" ]]; then
+  for candidate in /opt/homebrew/bin/ffmpeg /usr/local/bin/ffmpeg /opt/local/bin/ffmpeg /usr/bin/ffmpeg; do
+    if [[ -x "${candidate}" ]]; then
+      FFMPEG_BIN="${candidate}"
+      break
+    fi
+  done
+fi
+if [[ -z "${FFMPEG_BIN}" ]]; then
+  echo "ffmpeg not found on PATH; install FFmpeg or set FFMPEG_BIN." >&2
+  exit 1
+fi
 INTRO_SKIP="0"
 DURATION=""
 OUT=""
@@ -33,10 +46,10 @@ EMU_STOP_GRACE="1"
 
 usage() {
   cat <<EOF
-Usage: $0 --audio-device N [options]
+Usage: $0 [--audio-device DEVICE] [options]
 
-Required:
-  --audio-device N       AVFoundation audio device index
+Optional:
+  --audio-device DEVICE  AVFoundation device index or device name (default: BlackHole 2ch)
 
 Optional:
   --rom PATH             ROM path (default: ${ROM})
@@ -57,7 +70,7 @@ EOF
 }
 
 list_devices() {
-  ffmpeg -f avfoundation -list_devices true -i "" 2>&1 || true
+  "${FFMPEG_BIN}" -f avfoundation -list_devices true -i "" 2>&1 || true
 }
 
 while [[ $# -gt 0 ]]; do
@@ -140,6 +153,38 @@ if [[ -z "${AUDIO_DEVICE}" ]]; then
   exit 2
 fi
 
+avfoundation_input() {
+  local device="${1}"
+
+  if [[ -z "${device}" ]]; then
+    return 1
+  fi
+
+  if [[ "${device}" =~ ^[0-9]+$ ]]; then
+    printf ':%s' "${device}"
+    return 0
+  fi
+
+  local device_list
+  device_list="$("${FFMPEG_BIN}" -hide_banner -f avfoundation -list_devices true -i "" 2>&1 || true)"
+  local match
+  match="$(printf '%s\n' "${device_list}" | grep -m1 -E "\[[0-9]+\].*${device}|[0-9]+:.*${device}" || true)"
+
+  if [[ -n "${match}" ]]; then
+    local idx
+    idx="$(printf '%s\n' "${match}" | sed -E 's/.*\[([0-9]+)\].*/\1/; s/.*([0-9]+):.*/\1/; t; d')"
+    if [[ -n "${idx}" && "${idx}" =~ ^[0-9]+$ ]]; then
+      printf ':%s' "${idx}"
+      return 0
+    fi
+  fi
+
+  # ffmpeg on macOS accepts device names only through the AVFoundation device-list
+  # syntax with a leading ':'; keep the original value as a last-resort fallback.
+  printf '%s' "${device}"
+  return 0
+}
+
 if [[ ! -x "${EMU}" ]]; then
   echo "Emulator not executable: ${EMU}" >&2
   exit 1
@@ -165,9 +210,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "[capture] Recording from audio device ${AUDIO_DEVICE} to ${tmp_raw}"
-ffmpeg -hide_banner -loglevel warning -y \
-  -f avfoundation -i ":${AUDIO_DEVICE}" \
+device_input="$(avfoundation_input "${AUDIO_DEVICE}")"
+if [[ -z "${device_input}" ]]; then
+  echo "[capture] Could not resolve AVFoundation device input for '${AUDIO_DEVICE}'" >&2
+  exit 1
+fi
+
+echo "[capture] Recording from audio device ${AUDIO_DEVICE} (${device_input}) to ${tmp_raw}"
+"${FFMPEG_BIN}" -hide_banner -loglevel warning -y \
+  -f avfoundation -i "${device_input}" \
   -ar "${SAMPLE_RATE}" -ac "${CHANNELS}" \
   -c:a pcm_s16le -f wav "${tmp_raw}" &
 ff_pid=$!
@@ -242,7 +293,7 @@ fi
 
 duration_sec=""
 if [[ -s "${tmp_raw}" ]]; then
-  duration_sec="$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${tmp_raw}" 2>/dev/null || true)"
+  duration_sec="$("${FFMPEG_BIN%/ffmpeg}/ffprobe" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${tmp_raw}" 2>/dev/null || true)"
 fi
 
 # ffmpeg often exits non-zero when interrupted intentionally; accept that if
@@ -257,7 +308,7 @@ echo "[capture] Raw audio duration: ${duration_sec}s"
 
 effective_intro_skip="${INTRO_SKIP}"
 if [[ "${AUTO_START}" == "1" ]]; then
-  detect_log="$(ffmpeg -hide_banner -nostats -v info -i "${tmp_raw}" -af "silencedetect=noise=${START_NOISE}:d=${START_MIN_SILENCE}" -f null - 2>&1 || true)"
+  detect_log="$("${FFMPEG_BIN}" -hide_banner -nostats -v info -i "${tmp_raw}" -af "silencedetect=noise=${START_NOISE}:d=${START_MIN_SILENCE}" -f null - 2>&1 || true)"
   silence_end="$(printf '%s\n' "${detect_log}" | grep -m1 -oE 'silence_end: [0-9]+(\.[0-9]+)?' | awk '{print $2}')"
 
   if [[ -n "${silence_end}" ]]; then
@@ -278,7 +329,7 @@ fi
 trim_args+=( -c:a flac "${OUT}" )
 
 echo "[capture] Writing trimmed output: ${OUT}"
-ffmpeg "${trim_args[@]}"
+"${FFMPEG_BIN}" "${trim_args[@]}"
 
 echo "[capture] Done. Emulator exit code: ${emu_rc}"
 exit "${emu_rc}"

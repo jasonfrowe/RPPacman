@@ -20,12 +20,31 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shutil
 import statistics
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+
+def resolve_ffmpeg_bin() -> str:
+    env_ffmpeg = os.environ.get("FFMPEG_BIN")
+    if env_ffmpeg and os.path.exists(env_ffmpeg):
+        return env_ffmpeg
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        return ffmpeg
+    for candidate in ("/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/opt/local/bin/ffmpeg", "/usr/bin/ffmpeg"):
+        if os.path.exists(candidate):
+            return candidate
+    raise FileNotFoundError("ffmpeg not found on PATH or in common Homebrew locations")
+
+
+FFMPEG_BIN = resolve_ffmpeg_bin()
+FFPROBE_BIN = os.environ.get("FFPROBE_BIN") or os.path.join(os.path.dirname(FFMPEG_BIN), "ffprobe")
 
 
 @dataclass
@@ -106,7 +125,7 @@ def analyze(path: Path, start: float, duration: float | None) -> Stats:
 
     # Loudness summary
     ebur_cmd = [
-        "ffmpeg", "-hide_banner", "-nostats", "-v", "info",
+        FFMPEG_BIN, "-hide_banner", "-nostats", "-v", "info",
         *time_args,
         "-i", str(path),
         "-af", "ebur128=peak=true",
@@ -117,7 +136,7 @@ def analyze(path: Path, start: float, duration: float | None) -> Stats:
 
     # Time-domain RMS
     astats_cmd = [
-        "ffmpeg", "-hide_banner", "-nostats", "-v", "info",
+        FFMPEG_BIN, "-hide_banner", "-nostats", "-v", "info",
         *time_args,
         "-i", str(path),
         "-af", "astats=metadata=0:reset=1:length=0.4",
@@ -128,7 +147,7 @@ def analyze(path: Path, start: float, duration: float | None) -> Stats:
 
     # Spectral-frame metrics
     spec_cmd = [
-        "ffmpeg", "-hide_banner", "-nostats", "-v", "info",
+        FFMPEG_BIN, "-hide_banner", "-nostats", "-v", "info",
         *time_args,
         "-i", str(path),
         "-af", "aspectralstats=win_size=2048:overlap=0.75:measure=centroid+spread+flatness+entropy,ametadata=mode=print",
