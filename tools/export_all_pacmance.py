@@ -61,19 +61,28 @@ def clamp_u6(v):
         return 63
     return v
 
+def slew_tl(prev_tl, target_tl, max_step=6):
+    if prev_tl is None:
+        return target_tl
+    if target_tl > prev_tl + max_step:
+        return prev_tl + max_step
+    if target_tl < prev_tl - max_step:
+        return prev_tl - max_step
+    return target_tl
+
 def get_mix_trim(profile, ch_idx, inst_id, note):
     # Negative values make a channel louder by reducing TL attenuation.
     # Positive values tame loud channels.
     if profile == 'clean':
         # Base channel mix for cleaner profile.
         channel_trim = [
-            -2,  # ch0 pulse 1
-            2,   # ch1 pulse 2
-            -2,  # ch2 triangle bass
+            2,   # ch0 pulse 1
+            5,   # ch1 pulse 2
+            1,   # ch2 triangle bass
             0,   # ch3 noise drum
-            -1,  # ch4 dmc drum
-            8,   # ch5 n163 lead (was overpowering)
-            -1,  # ch6 n163 bass
+            0,   # ch4 dmc drum
+            10,  # ch5 n163 lead (was overpowering)
+            2,   # ch6 n163 bass
             0,
             0,
         ]
@@ -82,9 +91,9 @@ def get_mix_trim(profile, ch_idx, inst_id, note):
 
         # Instrument-specific correction layer.
         if inst_id == 38:   # N163 lead
-            trim += 4
+            trim += 6
         elif inst_id == 39: # N163 bass
-            trim += 1
+            trim += 2
         elif inst_id == 33: # Triangle bass
             trim += 1
 
@@ -107,19 +116,19 @@ def apply_patch_profile(rpt, profile):
         # Less modulation and softer harmonics for long listening sessions.
         p = rpt.user_bank[80]
         p.m_ave, p.c_ave = 0x21, 0x21
-        p.m_ksl, p.c_ksl = 0x24, 0x04
-        p.m_atdec, p.c_atdec = 0xD2, 0xE3
-        p.m_susrel, p.c_susrel = 0x18, 0x1A
-        p.m_wave, p.c_wave = 0x00, 0x01
-        p.feedback = 0x00
+        p.m_ksl, p.c_ksl = 0x1E, 0x06
+        p.m_atdec, p.c_atdec = 0xE4, 0xF4
+        p.m_susrel, p.c_susrel = 0x17, 0x18
+        p.m_wave, p.c_wave = 0x01, 0x01
+        p.feedback = 0x02
 
         p = rpt.user_bank[81]
         p.m_ave, p.c_ave = 0x21, 0x21
-        p.m_ksl, p.c_ksl = 0x26, 0x06
-        p.m_atdec, p.c_atdec = 0xC2, 0xE2
-        p.m_susrel, p.c_susrel = 0x1A, 0x1C
-        p.m_wave, p.c_wave = 0x00, 0x01
-        p.feedback = 0x00
+        p.m_ksl, p.c_ksl = 0x20, 0x08
+        p.m_atdec, p.c_atdec = 0xD4, 0xF3
+        p.m_susrel, p.c_susrel = 0x18, 0x19
+        p.m_wave, p.c_wave = 0x01, 0x01
+        p.feedback = 0x02
 
         p = rpt.user_bank[33]
         p.m_ave, p.c_ave = 0x23, 0x21
@@ -130,20 +139,20 @@ def apply_patch_profile(rpt, profile):
         p.feedback = 0x06
 
         p = rpt.user_bank[38]
-        p.m_ave, p.c_ave = 0x21, 0x21
-        p.m_ksl, p.c_ksl = 0x08, 0x08
-        p.m_atdec, p.c_atdec = 0xD1, 0xD1
-        p.m_susrel, p.c_susrel = 0x3A, 0x3A
-        p.m_wave, p.c_wave = 0x00, 0x00
-        p.feedback = 0x00
+        p.m_ave, p.c_ave = 0x23, 0x21
+        p.m_ksl, p.c_ksl = 0x0C, 0x06
+        p.m_atdec, p.c_atdec = 0xE2, 0xF2
+        p.m_susrel, p.c_susrel = 0x28, 0x29
+        p.m_wave, p.c_wave = 0x01, 0x01
+        p.feedback = 0x03
 
         p = rpt.user_bank[39]
         p.m_ave, p.c_ave = 0x22, 0x21
-        p.m_ksl, p.c_ksl = 0x14, 0x88
-        p.m_atdec, p.c_atdec = 0x98, 0xC2
-        p.m_susrel, p.c_susrel = 0x56, 0x68
+        p.m_ksl, p.c_ksl = 0x18, 0x8C
+        p.m_atdec, p.c_atdec = 0xA8, 0xD3
+        p.m_susrel, p.c_susrel = 0x46, 0x58
         p.m_wave, p.c_wave = 0x02, 0x01
-        p.feedback = 0x04
+        p.feedback = 0x05
         return
 
     if profile == 'bright':
@@ -256,6 +265,7 @@ def convert_rpt_to_bin(rpt, output_bin, target_loops=2, profile='balanced'):
     channel_prev_note = [0] * 9
     channel_prev_vol = [0] * 9
     channel_last_b0_no_key = [0] * 9
+    channel_last_tl = [None] * 9
 
     for ch, inst_id in enumerate(default_inst_for_channel):
         patch = rpt.user_bank[inst_id]
@@ -314,10 +324,17 @@ def convert_rpt_to_bin(rpt, output_bin, target_loops=2, profile='balanced'):
                         if ch_idx in (3, 4):
                             attenuation = min(attenuation, 2)
 
+                        attenuation = slew_tl(channel_last_tl[ch_idx], attenuation, max_step=6)
                         events.extend(create_event(0x40 + c, channel_car_ksl_hi[ch_idx] | attenuation, 0))
+                        channel_last_tl[ch_idx] = attenuation
 
                         h_b, l_b = midi_to_opl_freq(note)
-                        retrigger = (not prev_active) or (note != prev_note) or (vol != prev_vol) or (ch_idx in (3, 4))
+                        # Avoid clicky artifacts from volume-driven retriggers on melodic voices.
+                        # Drums still retrigger every active step for punch.
+                        if ch_idx in (3, 4):
+                            retrigger = key_active
+                        else:
+                            retrigger = (not prev_active) or (note != prev_note)
                         if retrigger:
                             # OPL needs key-off->key-on to reliably retrigger identical notes (critical for drums).
                             if prev_active:
