@@ -1,0 +1,8 @@
+# Gameplay test for RPPacman
+# Advances from Intro to Menu with Enter, then starts game with 'x' key
+run 30
+key enter
+run 30
+type "x"
+run 120
+shot "gameplay.png"

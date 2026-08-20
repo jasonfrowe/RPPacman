@@ -1,0 +1,6 @@
+# Boot test for RPPacman
+# Advances from Intro screen to Menu with Enter key
+run 30
+key enter
+run 60
+shot "menu.png"

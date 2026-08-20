@@ -6,3 +6,5 @@ __pycache__
 /NSF
 .vscode/c_cpp_properties.json
 CMakeUserPresets.json
+tools/rp6502-emu*
+PacManCE*

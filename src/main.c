@@ -442,9 +442,9 @@ int main(void)
                         clear_player_queued_dir();
                         set_game_motion_started(true);
 
-                        // Start playing gameplay music (LODERUN2.BIN)
+                        // Start playing gameplay music (PACMAN03.BIN)
                         s_game_bgm_playing = true;
-                        music_init("ROM:loderun2");
+                        music_init("ROM:pacman03");
                     }
                     break;
                 }
@@ -516,10 +516,10 @@ int main(void)
             update_lives_blink_animation();
             update_game_timer_display();
 
-            // Start playing gameplay music (LODERUN2.BIN) once Pac-Man begins to move
+            // Start playing gameplay music (PACMAN03.BIN) once Pac-Man begins to move
             if (!s_game_bgm_playing && is_game_motion_started()) {
                 s_game_bgm_playing = true;
-                music_init("ROM:loderun2");
+                music_init("ROM:pacman03");
             }
 
             if (is_game_timer_expired()) {

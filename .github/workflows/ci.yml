@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rom:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools and emulator runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build python3 \
+            libgl1 libx11-6 libxi6 libxcursor1 libasound2t64
+
+      - name: Cache the emulator
+        id: emu
+        uses: actions/cache@v4
+        with:
+          path: tools/rp6502-emu
+          key: rp6502-emu-${{ runner.os }}-${{ hashFiles('tools/rp6502.cmake') }}
+
+      - name: Fetch the emulator
+        if: steps.emu.outputs.cache-hit != 'true'
+        run: cmake -P tools/rp6502.cmake
+
+      - name: Setup LLVM-MOS SDK
+        uses: llvm-mos/setup-llvm-mos-sdk@v1
+
+      - name: Build the ROM
+        run: |
+          cmake --preset llvm-mos/Release
+          cmake --build --preset llvm-mos/Release
+
+      - name: Run verification tests
+        run: ctest --preset llvm-mos/Release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RPPacMan.rp6502
+          path: build/llvm-mos/release/RPPacMan.rp6502
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: emu-scratch
+          path: build/llvm-mos/release/tests/scratch/
