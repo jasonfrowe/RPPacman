@@ -236,9 +236,16 @@ class OPL2Translator:
             # 8->16 for more mixing headroom; pitch itself is fixed in
             # rhythm_setup(), not here.
             # Kick down a notch: TL 16/12 -> 22/18.
+            # Not actually missing (patch and trigger logic untouched,
+            # firing correctly) -- relatively buried instead. Its own TL
+            # was tuned before the melodic volume-rescale fix (see
+            # volume_set) raised sq1/tri/n163_0/n163_1 by ~6dB; rhythm
+            # voices don't go through that rescale, so kick's absolute
+            # level never moved and it fell behind. TL eased ~6dB (8 steps)
+            # to restore its prior relative presence.
             253: {  # bass drum (channel 6, both operators)
-                  "m_ave": 0x01, "m_ksl": 0x16, "m_atdec": 0xF8, "m_susrel": 0x57, "m_wave": 0x00,
-                  "c_ave": 0x01, "c_ksl": 0x12, "c_atdec": 0xFA, "c_susrel": 0x48, "c_wave": 0x00,
+                  "m_ave": 0x01, "m_ksl": 0x0E, "m_atdec": 0xF8, "m_susrel": 0x57, "m_wave": 0x00,
+                  "c_ave": 0x01, "c_ksl": 0x0A, "c_atdec": 0xFA, "c_susrel": 0x48, "c_wave": 0x00,
                   "feedback": 0x06},
             # Hi-hat/tom/cymbal: 17 was still too loud. Splitting the
             # difference between 17 (too loud) and 34 (too quiet) -> 25.
