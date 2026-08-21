@@ -442,9 +442,17 @@ int main(void)
                         clear_player_queued_dir();
                         set_game_motion_started(true);
 
-                        // Start playing gameplay music (PACMAN03.BIN)
+                        // Start playing gameplay music (PACMAN03.BIN, now
+                        // remapped in CMakeLists.txt to PacManCE_01.BIN --
+                        // that stream runs at quarter-frame/~240Hz tick
+                        // resolution (4 ticks per real 60Hz vsync frame),
+                        // 4x denser than pacman01/02's native tick rate,
+                        // so it alone needs the tempo scaled up 4x here
+                        // rather than scaling every track's vsync-driven
+                        // tick rate globally.
                         s_game_bgm_playing = true;
                         music_init("ROM:pacman03");
+                        music_set_tempo_scale(1024); // 1024 / 256 = 4.0x
                     }
                     break;
                 }
@@ -516,10 +524,13 @@ int main(void)
             update_lives_blink_animation();
             update_game_timer_display();
 
-            // Start playing gameplay music (PACMAN03.BIN) once Pac-Man begins to move
+            // Start playing gameplay music (PACMAN03.BIN, remapped to
+            // PacManCE_01.BIN -- see the other pacman03 load site for why
+            // the tempo scale is needed here) once Pac-Man begins to move
             if (!s_game_bgm_playing && is_game_motion_started()) {
                 s_game_bgm_playing = true;
                 music_init("ROM:pacman03");
+                music_set_tempo_scale(1024); // 1024 / 256 = 4.0x
             }
 
             if (is_game_timer_expired()) {
@@ -537,12 +548,9 @@ int main(void)
         }
 
         uint8_t now_vsync = RIA.vsync;
-        // Music .BIN streams run at quarter-frame (~240Hz) resolution --
-        // 4 ticks per real 60Hz vsync frame -- to approximate the NES
-        // APU's real envelope/counter clock rate.
-        uint8_t music_ticks = (uint8_t)((now_vsync - s_music_vsync_last) * 4u);
+        uint8_t music_ticks = (uint8_t)(now_vsync - s_music_vsync_last);
         if (music_ticks == 0u) {
-            music_ticks = 4u;
+            music_ticks = 1u;
         }
         s_music_vsync_last = now_vsync;
         vsync_last = now_vsync;
