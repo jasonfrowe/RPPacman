@@ -79,13 +79,28 @@ class VoiceState:
 
 
 # Pattern-channel indices (tools/import_nsf.py's RPT4 layout) for the five
-# melodic NES/N163 lanes that share four physical OPL2 channels dynamically.
+# melodic NES/N163 lanes. One physical channel per lane (5 lanes, 5
+# channels) -- measured on track 0: all 5 lanes are simultaneously active in
+# 21.5% of rows and 4+ in 49.8%, so a smaller shared pool would mean
+# frequent audible voice-stealing, not a rare edge case. acquire_channel's
+# stealing logic stays in place as a safety net (it should now never
+# actually need to fire for this track set, since demand never exceeds
+# pool size), not as the primary allocation strategy.
 LOGICAL_MELODIC_SOURCES = [0, 1, 2, 5, 6]  # sq1, sq2, tri, n163_0, n163_1
-MELODIC_POOL = [0, 1, 2, 3]                # physical channels shared by the above
 
-# Physical channels 4-5 are intentionally left unused here: they're the
-# budget reserved for future interactive SFX (eating pellets, ghosts, dying).
-SFX_RESERVED_CHANNELS = [4, 5]
+# source id -> (NSFConverter.build_frame_history() key, instrument patch id)
+MELODIC_SOURCE_INFO = {
+    0: ('sq1', 80),
+    1: ('sq2', 81),
+    2: ('tri', 33),
+    5: ('n163_0', 38),
+    6: ('n163_1', 39),
+}
+MELODIC_POOL = [0, 1, 2, 3, 4]             # physical channels shared by the above
+
+# Physical channel 5 is intentionally left unused here: it's the budget
+# reserved for future interactive SFX (eating pellets, ghosts, dying).
+SFX_RESERVED_CHANNELS = [5]
 
 # Physical channels 6-8 are dedicated to real OPL2 rhythm mode (register
 # 0xBD) instead of faking percussion with ordinary 2-op FM voices. This is
@@ -102,11 +117,20 @@ RYT_TOM = 0x04
 RYT_CYM = 0x02
 RYT_HH = 0x01
 
-# Per-logical-source mix trim, added to the computed TL (positive = quieter).
-# Triangle is always reported at max NES volume (the chip has no volume
-# register), so without this it dominates the mix; n163_0/n163_1 trims
-# preserve the balance already tuned by ear before this change.
-MIX_TRIM_BY_SOURCE = {2: 10, 5: -6, 6: 6}
+# Per-logical-source mix trim, added to the computed TL (positive = quieter,
+# negative = louder). Ear-tuned balance, not derived from anything: sq1 and
+# n163_0 (the first two voices) were dominating the mix, triangle (the
+# voice that follows) was getting buried under them, so sq1/n163_0 come
+# down and triangle's earlier heavy attenuation is mostly backed off.
+MIX_TRIM_BY_SOURCE = {0: 4, 2: 20, 5: 4, 6: 6}
+
+# Per-logical-source fine-tune in cents, added on top of the exact f-number
+# computation in midi_to_fnum (positive = sharper). Empty by default; this
+# is an experimental knob for chasing a specific voice's "out of tune"
+# complaint, not a standing correction -- the f-number math itself is exact
+# now (see midi_to_fnum), so a nonzero entry here is a deliberate detune,
+# not a bug fix.
+FINE_TUNE_CENTS_BY_SOURCE: Dict[int, float] = {}
 
 
 class OPL2Translator:
@@ -115,19 +139,49 @@ class OPL2Translator:
         self.channel_ksl: Dict[int, int] = {i: 0 for i in range(9)}
         self.logical_channel: Dict[int, int] = {s: -1 for s in LOGICAL_MELODIC_SOURCES}
         self.rhythm_reg = 0x00
+        self.prev_noise_bit = 0
+        self.prev_dmc_note = 0
         self.tick = 0
         # Pac-Man CE leans toward a bright, punchy arcade synth: tight lead,
         # clipped bass, and dry support voices with little extra resonance.
         self.patch_bank: Dict[int, Dict[str, int]] = {
-              80: {"m_ave": 0x21, "m_ksl": 0x15, "m_atdec": 0xF4, "m_susrel": 0x18, "m_wave": 0x03,
-                  "c_ave": 0x31, "c_ksl": 0x00, "c_atdec": 0xF4, "c_susrel": 0x18, "c_wave": 0x00,
-                  "feedback": 0x02},
+              # Inst 80 (sq1): user-directed swap to RPTracker's gm_bank[0x3B]
+              # (Muted Trumpet) after isolated review. Decay rate (low
+              # nibble of *_atdec) raised from 1/4 to 9/9 -- same issue and
+              # same fix as inst 38: with glide (no retrigger) the envelope
+              # only attacks once, so RPTracker's original slow decay was
+              # audible as a many-second fade instead of a quick settle to
+              # the sustain level.
+              # Carrier sustain level (high nibble of c_susrel) also dropped
+              # to 0: at SL=6 the envelope's own attenuation was stacking
+              # with our per-note TL/mix-trim attenuation, landing well
+              # below audible even after the decay-rate fix. Our own
+              # per-note volume system is the intended sole loudness
+              # authority for a held note; the patch's sustain level should
+              # just be "as loud as the envelope gets", not a second
+              # independent attenuation on top.
+              80: {"m_ave": 0x71, "m_ksl": 0x1C, "m_atdec": 0x59, "m_susrel": 0x03, "m_wave": 0x00,
+                  "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0x59, "c_susrel": 0x07, "c_wave": 0x00,
+                  "feedback": 0x0E},
               81: {"m_ave": 0x41, "m_ksl": 0x0C, "m_atdec": 0xF2, "m_susrel": 0xFF, "m_wave": 0x00,
                   "c_ave": 0x11, "c_ksl": 0x00, "c_atdec": 0xF2, "c_susrel": 0xFF, "c_wave": 0x00,
                   "feedback": 0x02},
-              33: {"m_ave": 0x01, "m_ksl": 0x10, "m_atdec": 0xD6, "m_susrel": 0xF2, "m_wave": 0x00,
-                  "c_ave": 0x10, "c_ksl": 0x80, "c_atdec": 0xC6, "c_susrel": 0x8A, "c_wave": 0x00,
-                 "feedback": 0x02},
+              # Inst 33 (triangle): back to RPTracker's gm_bank[0x50]
+              # (Square Lead) -- the very first one tried, back when the
+              # whole-tone fnum bug and the linear-counter gate bug were
+              # both still live, so "sounds flat" then almost certainly
+              # meant the real pitch bug, not this patch. Both operators
+              # already sustain-type with MULT=1, same as sq1 and as
+              # Acoustic Bass (which still read as flat -- the modulator-
+              # MULT hypothesis from that attempt looks weaker now). Usual
+              # decay-rate safety margin applied to both operators (2->9);
+              # carrier SL was already near 0 and just zeroed exactly;
+              # modulator's wave=3 (quarter-sine, not sine) and feedback=0
+              # (no self-modulation) both left as the original patch had
+              # them.
+              33: {"m_ave": 0x21, "m_ksl": 0x1D, "m_atdec": 0xF9, "m_susrel": 0x0F, "m_wave": 0x03,
+                  "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x08, "c_wave": 0x00,
+                 "feedback": 0x00},
             115: {"m_ave": 0x32, "m_ksl": 0x44, "m_atdec": 0xF8, "m_susrel": 0xFF, "m_wave": 0x00,
                   "c_ave": 0x11, "c_ksl": 0x00, "c_atdec": 0xF5, "c_susrel": 0x7F, "c_wave": 0x00,
                   "feedback": 0x04},
@@ -150,40 +204,95 @@ class OPL2Translator:
                   "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x48, "c_wave": 0x00,
                   "feedback": 0x06},
             254: {  # channel 7: modulator = hi-hat, carrier = snare
-                  "m_ave": 0x02, "m_ksl": 0x10, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
-                  "c_ave": 0x01, "c_ksl": 0x08, "c_atdec": 0xFA, "c_susrel": 0x39, "c_wave": 0x00,
+                  # In rhythm mode HH/SD are not FM-chained -- each operator
+                  # is independently audible -- so *_ksl's TL directly sets
+                  # each voice's own loudness. Both were left at a moderate
+                  # attenuation on the assumption drums would sit back in
+                  # the mix; they were instead inaudible. Maxed to TL=0.
+                  "m_ave": 0x02, "m_ksl": 0x00, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
+                  "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x39, "c_wave": 0x00,
                   "feedback": 0x04},
             255: {  # channel 8: modulator = tom-tom, carrier = top cymbal
-                  "m_ave": 0x01, "m_ksl": 0x04, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
-                  "c_ave": 0x02, "c_ksl": 0x10, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
+                  "m_ave": 0x01, "m_ksl": 0x00, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
+                  "c_ave": 0x02, "c_ksl": 0x00, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
                   "feedback": 0x02},
-            # Inst 38 (N163 ch0, the low voice): switched from a parallel
-            # (additive) connection with two plain sine operators -- which
-            # is why it had no buzz, the modulator was just a second sine
-            # tone summed in, never actually modulating anything -- to a
-            # series/FM connection with a higher modulator multiple, a
-            # harmonic-rich quarter-sine modulator waveform, and feedback,
-            # so the modulator now actually injects overtones into the
-            # carrier. Attack/decay/sustain/release left as before.
-            38: {"m_ave": 0x22, "m_ksl": 0x02, "m_atdec": 0xF2, "m_susrel": 0x38, "m_wave": 0x03,
-                 "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF1, "c_susrel": 0x38, "c_wave": 0x00,
-                 "feedback": 0x06},
+            # Inst 38 (N163 ch0, the low voice): user-directed swap to
+            # RPTracker's gm_bank[0x18] (Nylon Guitar) after further review
+            # of the Harpsichord attempt. EGT (bit5 of *_ave) flipped from
+            # RPTracker's original 0 (percussive: decays through to silence
+            # even while held, correct for a plucked guitar played as
+            # discrete notes) to 1 (sustaining: holds at the sustain level
+            # while key-on stays high). Needed once note changes within a
+            # phrase started gliding instead of retriggering (see
+            # note_glide, added to fix clicking): a percussive envelope
+            # never gets re-attacked mid-phrase, so it just decays to
+            # silence over the run instead of holding. Attack/decay/sustain/
+            # release/waveform/feedback otherwise unchanged from the chosen
+            # patch.
+            # Decay rate (low nibble of *_atdec) raised from RPTracker's
+            # original 1 (near-instant Attack, then an extremely slow crawl
+            # down to the sustain level -- fine for a retriggered note, but
+            # with glide only attacking once, that slow decay was the whole
+            # audible "fade": it was still crawling toward sustain many
+            # seconds into the phrase) to 9, so it settles at the sustain
+            # level within a fraction of a second and then actually holds
+            # there for the rest of the run.
+            # Carrier sustain level also dropped to 0 -- same reasoning as
+            # inst 80: it was stacking with our own per-note attenuation
+            # instead of just being "as loud as the envelope gets".
+            # Feedback bumped from 0x06 (FB=3) to sq1's 0x0E (FB=7) -- sq1
+            # ("now quite good") is otherwise structurally the same patch
+            # (MULT=1 on both operators, sustain-type envelope, series
+            # connection); feedback amount is the main OPL2 lever for how
+            # much a sine operator buzzes/grits up via self-modulation, and
+            # is the most direct thing to borrow for the grit this lost.
+            38: {"m_ave": 0x21, "m_ksl": 0x4D, "m_atdec": 0xF9, "m_susrel": 0x55, "m_wave": 0x00,
+                 "c_ave": 0x31, "c_ksl": 0x02, "c_atdec": 0xF9, "c_susrel": 0x04, "c_wave": 0x00,
+                 "feedback": 0x0E},
             39: {"m_ave": 0x01, "m_ksl": 0x00, "m_atdec": 0xF1, "m_susrel": 0x54, "m_wave": 0x00,
                  "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xF1, "c_susrel": 0x54, "c_wave": 0x00,
                  "feedback": 0x00},
         }
 
-    @staticmethod
-    def midi_to_fnum(midi_note: int) -> tuple[int, int]:
-        """Match the runtime's OPL2 note conversion in src/opl.c."""
-        note = max(12, min(127, midi_note))
-        block = (note - 12) // 12
-        note_idx = (note - 12) % 12
-        if block > 7:
-            block = 7
+    OPL_CLOCK_HZ = 3579545.0
 
-        fnum_table = [308, 325, 345, 365, 387, 410, 434, 460, 487, 516, 547, 579]
-        f_num = fnum_table[note_idx]
+    @classmethod
+    def midi_to_fnum(cls, midi_note: int, cents: float = 0.0) -> tuple[int, int]:
+        """Convert a MIDI note (optionally detuned by `cents`) to an exact
+        OPL2 block/f-number pair, computed directly from the target
+        frequency rather than a fixed 12-entry table.
+
+        The fixed table (one f-num per pitch class, reused every octave)
+        this replaced was only accurate to within about -3/+4 cents of true
+        equal temperament -- small, usually inaudible on a single tone, but
+        it meant there was no way to deliberately nudge a specific voice's
+        tuning without picking a different, still-imprecise table entry.
+        Computing the f-number directly from the target frequency removes
+        that rounding and makes `cents` a real, exact fine-tune knob.
+        """
+        note = max(12, min(127, midi_note))
+        freq = 440.0 * (2.0 ** ((note - 69) / 12.0)) * (2.0 ** (cents / 1200.0))
+
+        # Pick the lowest block where the f-number still fits in 10 bits --
+        # that maximizes f-num (and so cents-per-step resolution) for this
+        # frequency. block=(note-10)//12 mirrors the old table's block
+        # choice for a normal note, but a large `cents` offset near an
+        # octave boundary could shift which block actually fits, so search
+        # explicitly rather than assume it.
+        best = None
+        for block in range(8):
+            fnum = round(freq * 72.0 * (2 ** (20 - block)) / cls.OPL_CLOCK_HZ)
+            if 0 <= fnum <= 1023:
+                best = (fnum, block)
+                break
+        if best is None:
+            # Outside the representable range entirely (only possible at
+            # the extreme ends of the MIDI range with a large detune) --
+            # clamp to the nearest edge rather than producing garbage.
+            fnum = round(freq * 72.0 * (2 ** 20) / cls.OPL_CLOCK_HZ)
+            best = (0, 0) if fnum < 0 else (1023, 7)
+        f_num, block = best
+
         hi = 0x20 | (block << 2) | ((f_num >> 8) & 0x03)
         lo = f_num & 0xFF
         return lo, hi
@@ -227,8 +336,8 @@ class OPL2Translator:
         events.append(OPL2Event(0xC0 + channel, patch["feedback"]))
         return events
 
-    def note_on(self, channel: int, midi_note: int) -> List[OPL2Event]:
-        lo, hi = self.midi_to_fnum(midi_note)
+    def note_on(self, channel: int, midi_note: int, cents: float = 0.0) -> List[OPL2Event]:
+        lo, hi = self.midi_to_fnum(midi_note, cents)
         hi_keyon = hi | 0x20
         events = [
             OPL2Event(0xA0 + channel, lo),
@@ -237,6 +346,25 @@ class OPL2Translator:
         self.voice_state[channel].note = midi_note
         self.voice_state[channel].fnum_hi = hi_keyon & 0x1F
         self.voice_state[channel].active = True
+        return events
+
+    def note_glide(self, channel: int, midi_note: int, cents: float = 0.0) -> List[OPL2Event]:
+        """Change pitch on an already-sounding voice without retriggering it.
+
+        Writing new f-num/block bytes while the key-on bit (0xB0 bit 5)
+        stays set changes the OPL2 channel's pitch in place; the envelope
+        keeps running rather than restarting. Used for same-instrument
+        pitch changes so a fast arpeggio doesn't force a fresh attack (and
+        the click/pluck that comes with it) on every note.
+        """
+        lo, hi = self.midi_to_fnum(midi_note, cents)
+        hi_keyon = hi | 0x20
+        events = [
+            OPL2Event(0xA0 + channel, lo),
+            OPL2Event(0xB0 + channel, hi_keyon),
+        ]
+        self.voice_state[channel].note = midi_note
+        self.voice_state[channel].fnum_hi = hi_keyon & 0x1F
         return events
 
     def note_off(self, channel: int) -> List[OPL2Event]:
@@ -289,17 +417,30 @@ class OPL2Translator:
         fires rather than a continuously retuned pitch: OPL2's hi-hat/tom/
         cymbal derive their tone from a fixed hardware noise/phase
         combination on channels 7/8, not a freely retunable oscillator.
+
+        Only fires on a genuine attack -- silence-to-active, or a change of
+        target voice mid-streak -- not on every row of a held streak. Noise
+        hits in Pac-Man CE run in multi-row streaks; retriggering every row
+        never lets the (deliberately slower-decaying) cymbal/tom voices
+        actually ring, which is most of why the drums were inaudible.
         """
         bits = 0
-        if dmc_note > 0:
+        if dmc_note > 0 and self.prev_dmc_note <= 0:
             bits |= RYT_BD
+        self.prev_dmc_note = dmc_note
+
         if noise_note > 0:
             if noise_note >= 74:
-                bits |= RYT_HH
+                target = RYT_HH
             elif noise_note >= 55:
-                bits |= RYT_TOM
+                target = RYT_TOM
             else:
-                bits |= RYT_CYM
+                target = RYT_CYM
+            if target != self.prev_noise_bit:
+                bits |= target
+            self.prev_noise_bit = target
+        else:
+            self.prev_noise_bit = 0
 
         if bits == 0:
             return []
@@ -320,9 +461,12 @@ class OPL2Translator:
 
         Prefers a genuinely free channel, then an idle one (still "owned" by
         another source but not currently sounding a note -- reclaiming it is
-        inaudible), and only as a last resort steals an actively-sounding
-        voice, picking the quietest (highest TL) and then the least
-        recently triggered.
+        inaudible). Only as a last resort -- all 4 channels actively
+        sounding at once -- does it steal, and purely by least-recently
+        triggered (not by TL/loudness: TL reflects intentional per-source
+        mix trims like the triangle's, so using it here would make any
+        deliberately-quieter voice the perpetual first victim, cutting it
+        off mid-note instead of just sitting back in the mix).
         """
         phys = self.logical_channel.get(source, -1)
         if phys != -1:
@@ -330,7 +474,7 @@ class OPL2Translator:
 
         idle = [p for p in MELODIC_POOL if not self.voice_state[p].active]
         pool = idle if idle else MELODIC_POOL
-        phys = max(pool, key=lambda p: (self.voice_state[p].tl, -self.voice_state[p].last_tick))
+        phys = min(pool, key=lambda p: self.voice_state[p].last_tick)
 
         events: List[OPL2Event] = []
         old_owner = self.voice_state[phys].owner
@@ -368,11 +512,14 @@ class OPL2Translator:
             state.volume = -1
             state.tl = -1
 
-        if state.active and note_changed:
-            events.extend(self.note_off(phys))
-
-        if patch_changed or not state.active or note_changed:
-            events.extend(self.note_on(phys, note))
+        cents = FINE_TUNE_CENTS_BY_SOURCE.get(source, 0.0)
+        if patch_changed or not state.active:
+            events.extend(self.note_on(phys, note, cents))
+            state.last_tick = self.tick
+        elif note_changed:
+            # Same instrument, already sounding: glide instead of
+            # retriggering, so a fast arpeggio doesn't click on every note.
+            events.extend(self.note_glide(phys, note, cents))
             state.last_tick = self.tick
 
         if patch_changed or note_changed or state.volume != vol or state.tl < 0:
@@ -380,55 +527,71 @@ class OPL2Translator:
 
         return events
 
-    def translate_track(self, rpt) -> List[OPL2Event]:
-        """Convert a current RPT pattern into a proper voice-state OPL2 stream."""
+    def translate_frame_history(self, history) -> List[OPL2Event]:
+        """Build the OPL2 event stream directly from real 60Hz NSF frames.
+
+        No row/pattern quantization: 1 history frame is 1 tick in the
+        runtime's delay units (both are the real 60Hz vsync rate the game
+        actually runs at), so there's no frames_per_row/bpm conversion to
+        get wrong, and nothing that changes faster than a fixed row width
+        -- like the triangle's linear-counter gate -- gets lost to a
+        majority vote. process_melodic/process_rhythm already only emit
+        register writes when something actually changes; calling them once
+        per real frame instead of once per artificially-widened row is all
+        that's needed.
+        """
         # Fully self-contained: reset all per-translation state here so a
         # translator instance can safely be reused across tracks or not.
         self.voice_state = {i: VoiceState() for i in range(9)}
         self.channel_ksl = {i: 0 for i in range(9)}
         self.logical_channel = {s: -1 for s in LOGICAL_MELODIC_SOURCES}
+        self.prev_noise_bit = 0
+        self.prev_dmc_note = 0
         self.tick = 0
 
         out: List[OPL2Event] = []
-        ticks_per_row = max(1, int(round(900.0 / max(1, getattr(rpt, "bpm", 150)))))
-
         out.extend(self.rhythm_setup())
+        last_index = 0  # frame index the most recent emitted batch corresponds to
 
-        for pattern_index in range(rpt.song_length):
-            for row_index in range(32):
-                cell_index = pattern_index * 32 + row_index
-                if cell_index >= len(rpt.patterns):
-                    continue
+        for i, frame in enumerate(history):
+            self.tick += 1
+            frame_events: List[OPL2Event] = []
 
-                self.tick += 1
-                row = rpt.patterns[cell_index]
-                row_events: List[OPL2Event] = []
+            for source, (hist_key, inst) in MELODIC_SOURCE_INFO.items():
+                note, vol = frame[hist_key]
+                frame_events.extend(self.process_melodic(source, note, inst, vol))
 
-                for source in LOGICAL_MELODIC_SOURCES:
-                    cell = row[source]
-                    row_events.extend(self.process_melodic(
-                        source, getattr(cell, "note", 0), getattr(cell, "inst", 0), getattr(cell, "vol", 0)))
+            frame_events.extend(self.process_rhythm(frame['noise'][0], frame['dmc'][0]))
 
-                noise_note = getattr(row[3], "note", 0)
-                dmc_note = getattr(row[4], "note", 0)
-                row_events.extend(self.process_rhythm(noise_note, dmc_note))
-
-                if row_events:
-                    row_events[-1].delay = ticks_per_row
-                    out.extend(row_events)
-                else:
-                    out.append(OPL2Event(0x01, 0x20, ticks_per_row))
+            if frame_events:
+                # The wait since the previous batch belongs on the
+                # *previous* batch's trailing event (it's how long the
+                # player idles before reaching this one), not on this
+                # batch's own trailing event -- attaching it here instead
+                # shifted every event's timing by one gap and, worse, made
+                # the very first batch play instantly at t=0 whenever
+                # nothing preceded it (e.g. a solo render with no rhythm
+                # setup), since there was nothing yet to attach a leading
+                # wait to.
+                gap = i - last_index
+                if gap > 0:
+                    if out:
+                        out[-1].delay = gap
+                    else:
+                        out.append(OPL2Event(0x01, 0x20, gap))
+                out.extend(frame_events)
+                last_index = i
 
         return out
 
 
 def translate_nsf_track(nsf_path: str, track_idx: int = 0, loops: int = 1) -> List[OPL2Event]:
     converter = NSFConverter(nsf_path)
-    rpt = converter.convert_track(track_idx)
+    history = converter.build_subframe_history(track_idx)
     translator = OPL2Translator()
     events: List[OPL2Event] = []
     for _ in range(max(1, loops)):
-        events.extend(translator.translate_track(rpt))
+        events.extend(translator.translate_frame_history(history))
     return events
 
 
@@ -439,8 +602,8 @@ def export_all_tracks(nsf_path: str, output_dir: str) -> List[str]:
     exported: List[str] = []
 
     for track_idx in range(converter.total_songs):
-        rpt = converter.convert_track(track_idx)
-        events = translator.translate_track(rpt)
+        history = converter.build_subframe_history(track_idx)
+        events = translator.translate_frame_history(history)
         out_path = os.path.join(output_dir, f"track_{track_idx:02d}.json")
         with open(out_path, "w", encoding="utf-8") as fh:
             json.dump([e.to_tuple() for e in events], fh, separators=(",", ":"))

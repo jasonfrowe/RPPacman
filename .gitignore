@@ -7,6 +7,6 @@ __pycache__
 .vscode/c_cpp_properties.json
 CMakeUserPresets.json
 tools/rp6502-emu*
-PacManCE*
+.cache
 captures/
 .DS_Store

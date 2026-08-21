@@ -537,9 +537,12 @@ int main(void)
         }
 
         uint8_t now_vsync = RIA.vsync;
-        uint8_t music_ticks = (uint8_t)(now_vsync - s_music_vsync_last);
+        // Music .BIN streams run at quarter-frame (~240Hz) resolution --
+        // 4 ticks per real 60Hz vsync frame -- to approximate the NES
+        // APU's real envelope/counter clock rate.
+        uint8_t music_ticks = (uint8_t)((now_vsync - s_music_vsync_last) * 4u);
         if (music_ticks == 0u) {
-            music_ticks = 1u;
+            music_ticks = 4u;
         }
         s_music_vsync_last = now_vsync;
         vsync_last = now_vsync;

@@ -7,21 +7,25 @@
 #include <unistd.h>
 #include "opl.h"
 
-// F-Number table for Octave 4 @ 4.0 MHz
+// F-number table for one octave at block 4, indexed starting at Bb (not C):
+// fnum_table[0] measures ~233.7 Hz (Bb3), not C4's 261.6 Hz. midi_to_opl_freq
+// accounts for that with a base offset of 10, not 12 -- using 12 here made
+// every note come out a whole tone (2 semitones) flat, verified both
+// mathematically and by measuring a rendered note's actual fundamental.
 const uint16_t fnum_table[12] = {
     308, 325, 345, 365, 387, 410, 434, 460, 487, 516, 547, 579
 };
 
-uint8_t shadow_b0[9] = {0}; 
+uint8_t shadow_b0[9] = {0};
 uint8_t shadow_ksl_m[9] = {0};
 uint8_t shadow_ksl_c[9] = {0};
 
 uint16_t midi_to_opl_freq(uint8_t midi_note) {
-    if (midi_note < 12) midi_note = 12;
-    
-    int block = (midi_note - 12) / 12;
-    int note_idx = (midi_note - 12) % 12;
-    
+    if (midi_note < 10) midi_note = 10;
+
+    int block = (midi_note - 10) / 12;
+    int note_idx = (midi_note - 10) % 12;
+
     if (block > 7) block = 7;
 
     uint16_t f_num = fnum_table[note_idx];
