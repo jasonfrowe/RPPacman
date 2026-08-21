@@ -74,12 +74,48 @@ class VoiceState:
     active: bool = False
     fnum_hi: int = 0
     tl: int = -1
+    owner: int = -1       # logical melodic source currently assigned to this physical channel, -1 = free
+    last_tick: int = 0    # row tick this channel was last (re)triggered, for voice-steal aging
+
+
+# Pattern-channel indices (tools/import_nsf.py's RPT4 layout) for the five
+# melodic NES/N163 lanes that share four physical OPL2 channels dynamically.
+LOGICAL_MELODIC_SOURCES = [0, 1, 2, 5, 6]  # sq1, sq2, tri, n163_0, n163_1
+MELODIC_POOL = [0, 1, 2, 3]                # physical channels shared by the above
+
+# Physical channels 4-5 are intentionally left unused here: they're the
+# budget reserved for future interactive SFX (eating pellets, ghosts, dying).
+SFX_RESERVED_CHANNELS = [4, 5]
+
+# Physical channels 6-8 are dedicated to real OPL2 rhythm mode (register
+# 0xBD) instead of faking percussion with ordinary 2-op FM voices. This is
+# the only way to get the chip's actual hardware noise generator, which is
+# what a hi-hat/cymbal/snare needs to not sound like a pitched beep.
+RHYTHM_BD_CH = 6      # bass drum: both operators
+RHYTHM_HHSD_CH = 7    # modulator = hi-hat, carrier = snare
+RHYTHM_TOMCYM_CH = 8  # modulator = tom-tom, carrier = top cymbal
+
+RYT_ENABLE = 0x20  # register 0xBD bit 5
+RYT_BD = 0x10
+RYT_SD = 0x08
+RYT_TOM = 0x04
+RYT_CYM = 0x02
+RYT_HH = 0x01
+
+# Per-logical-source mix trim, added to the computed TL (positive = quieter).
+# Triangle is always reported at max NES volume (the chip has no volume
+# register), so without this it dominates the mix; n163_0/n163_1 trims
+# preserve the balance already tuned by ear before this change.
+MIX_TRIM_BY_SOURCE = {2: 10, 5: -6, 6: 6}
 
 
 class OPL2Translator:
     def __init__(self):
         self.voice_state: Dict[int, VoiceState] = {i: VoiceState() for i in range(9)}
         self.channel_ksl: Dict[int, int] = {i: 0 for i in range(9)}
+        self.logical_channel: Dict[int, int] = {s: -1 for s in LOGICAL_MELODIC_SOURCES}
+        self.rhythm_reg = 0x00
+        self.tick = 0
         # Pac-Man CE leans toward a bright, punchy arcade synth: tight lead,
         # clipped bass, and dry support voices with little extra resonance.
         self.patch_bank: Dict[int, Dict[str, int]] = {
@@ -98,18 +134,40 @@ class OPL2Translator:
             118: {"m_ave": 0x00, "m_ksl": 0x0D, "m_atdec": 0xE8, "m_susrel": 0xEF, "m_wave": 0x00,
                   "c_ave": 0x00, "c_ksl": 0x00, "c_atdec": 0xA5, "c_susrel": 0xFF, "c_wave": 0x00,
                   "feedback": 0x02},
-            253: {"m_ave": 0x00, "m_ksl": 0x0D, "m_atdec": 0xE8, "m_susrel": 0xEF, "m_wave": 0x00,
-                  "c_ave": 0x00, "c_ksl": 0x00, "c_atdec": 0xA5, "c_susrel": 0xFF, "c_wave": 0x00,
+            # 253/254/255 are no longer melodic-FM "drum" patches faking
+            # percussion; they're the real OPL2 rhythm-mode voices (register
+            # 0xBD), applied to channels 6/7/8 by rhythm_setup(). EGT (bit 5
+            # of *_ave) is deliberately 0 on every operator here: that's the
+            # "percussive" envelope type, so each hit decays to silence on
+            # its own release phase instead of holding at sustain like a
+            # melodic note. These are a reasoned first pass (fast attacks,
+            # short decay/release shaped per voice) rather than values
+            # pulled from a published bank -- no authoritative byte-level
+            # AdLib rhythm-kit reference turned up in research, so this is
+            # the starting point to dial in by ear.
+            253: {  # bass drum (channel 6, both operators)
+                  "m_ave": 0x01, "m_ksl": 0x08, "m_atdec": 0xF8, "m_susrel": 0x57, "m_wave": 0x00,
+                  "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x48, "c_wave": 0x00,
                   "feedback": 0x06},
-            254: {"m_ave": 0x06, "m_ksl": 0x00, "m_atdec": 0xF0, "m_susrel": 0xF0, "m_wave": 0x00,
-                  "c_ave": 0x00, "c_ksl": 0x00, "c_atdec": 0xF7, "c_susrel": 0xF7, "c_wave": 0x00,
-                  "feedback": 0x0E},
-            255: {"m_ave": 0x05, "m_ksl": 0x00, "m_atdec": 0xF0, "m_susrel": 0x77, "m_wave": 0x00,
-                  "c_ave": 0x00, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0xEA, "c_wave": 0x00,
-                  "feedback": 0x0E},
-            38: {"m_ave": 0x21, "m_ksl": 0x00, "m_atdec": 0xF1, "m_susrel": 0x38, "m_wave": 0x00,
+            254: {  # channel 7: modulator = hi-hat, carrier = snare
+                  "m_ave": 0x02, "m_ksl": 0x10, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
+                  "c_ave": 0x01, "c_ksl": 0x08, "c_atdec": 0xFA, "c_susrel": 0x39, "c_wave": 0x00,
+                  "feedback": 0x04},
+            255: {  # channel 8: modulator = tom-tom, carrier = top cymbal
+                  "m_ave": 0x01, "m_ksl": 0x04, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
+                  "c_ave": 0x02, "c_ksl": 0x10, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
+                  "feedback": 0x02},
+            # Inst 38 (N163 ch0, the low voice): switched from a parallel
+            # (additive) connection with two plain sine operators -- which
+            # is why it had no buzz, the modulator was just a second sine
+            # tone summed in, never actually modulating anything -- to a
+            # series/FM connection with a higher modulator multiple, a
+            # harmonic-rich quarter-sine modulator waveform, and feedback,
+            # so the modulator now actually injects overtones into the
+            # carrier. Attack/decay/sustain/release left as before.
+            38: {"m_ave": 0x22, "m_ksl": 0x02, "m_atdec": 0xF2, "m_susrel": 0x38, "m_wave": 0x03,
                  "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF1, "c_susrel": 0x38, "c_wave": 0x00,
-                 "feedback": 0x01},
+                 "feedback": 0x06},
             39: {"m_ave": 0x01, "m_ksl": 0x00, "m_atdec": 0xF1, "m_susrel": 0x54, "m_wave": 0x00,
                  "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xF1, "c_susrel": 0x54, "c_wave": 0x00,
                  "feedback": 0x00},
@@ -192,40 +250,149 @@ class OPL2Translator:
         state.note = 0
         return events
 
-    def volume_set(self, channel: int, volume_63: int, note: int, inst: int) -> List[OPL2Event]:
+    def volume_set(self, channel: int, volume_63: int, note: int, inst: int, source: int = -1) -> List[OPL2Event]:
         """Set TL without dropping the note; this avoids click artifacts."""
         state = self.voice_state[channel]
         tl = self.velocity_to_opl_tl(volume_63)
+        tl = max(0, min(63, tl + MIX_TRIM_BY_SOURCE.get(source, 0)))
         reg = 0x40 + CAR_OFFSETS[channel]
         state.volume = volume_63
         state.tl = tl
         ksl_bits = self.channel_ksl.get(channel, 0) & 0xC0
         return [OPL2Event(reg, ksl_bits | tl)]
 
-    def route_drum(self, channel: int, note: int, volume: int) -> List[OPL2Event]:
-        """Use the RPTracker custom drum patches and route by note range."""
+    def rhythm_setup(self) -> List[OPL2Event]:
+        """Program channels 6-8 for real OPL2 rhythm mode and enable it."""
+        events: List[OPL2Event] = []
+        events.extend(self.patch_set(RHYTHM_BD_CH, 253))
+        events.extend(self.patch_set(RHYTHM_HHSD_CH, 254))
+        events.extend(self.patch_set(RHYTHM_TOMCYM_CH, 255))
+
+        # Rhythm-mode channels are never key-on'd through 0xB0-0xB8 (that bit
+        # is controlled by 0xBD instead); only their pitch is set here, once
+        # -- see process_rhythm for why HH/TOM/CYM don't get a per-hit pitch.
+        for phys, note in ((RHYTHM_BD_CH, 48), (RHYTHM_HHSD_CH, 84), (RHYTHM_TOMCYM_CH, 65)):
+            lo, hi = self.midi_to_fnum(note)
+            events.append(OPL2Event(0xA0 + phys, lo))
+            events.append(OPL2Event(0xB0 + phys, hi & 0x1F))
+
+        self.rhythm_reg = RYT_ENABLE
+        events.append(OPL2Event(0xBD, self.rhythm_reg))
+        return events
+
+    def process_rhythm(self, noise_note: int, dmc_note: int) -> List[OPL2Event]:
+        """Route the NES noise/DMC lanes into real rhythm-mode hits.
+
+        DMC only ever reports a fixed "on" tone (see import_nsf.py), so it
+        can only ever mean "kick hit". Noise carries a genuine pitch
+        (NOISE_PERIOD_TO_MIDI), which becomes a choice of which rhythm voice
+        fires rather than a continuously retuned pitch: OPL2's hi-hat/tom/
+        cymbal derive their tone from a fixed hardware noise/phase
+        combination on channels 7/8, not a freely retunable oscillator.
+        """
+        bits = 0
+        if dmc_note > 0:
+            bits |= RYT_BD
+        if noise_note > 0:
+            if noise_note >= 74:
+                bits |= RYT_HH
+            elif noise_note >= 55:
+                bits |= RYT_TOM
+            else:
+                bits |= RYT_CYM
+
+        if bits == 0:
+            return []
+
+        events: List[OPL2Event] = []
+        # Force a fresh attack on every firing bit: clear then set, since a
+        # bit already held high wouldn't re-trigger the envelope.
+        off_reg = self.rhythm_reg & (~bits & 0xFF)
+        if off_reg != self.rhythm_reg:
+            events.append(OPL2Event(0xBD, off_reg))
+        on_reg = self.rhythm_reg | bits
+        events.append(OPL2Event(0xBD, on_reg))
+        self.rhythm_reg = on_reg
+        return events
+
+    def acquire_channel(self, source: int) -> tuple[int, List[OPL2Event]]:
+        """Return the physical channel for a melodic source, stealing if needed.
+
+        Prefers a genuinely free channel, then an idle one (still "owned" by
+        another source but not currently sounding a note -- reclaiming it is
+        inaudible), and only as a last resort steals an actively-sounding
+        voice, picking the quietest (highest TL) and then the least
+        recently triggered.
+        """
+        phys = self.logical_channel.get(source, -1)
+        if phys != -1:
+            return phys, []
+
+        idle = [p for p in MELODIC_POOL if not self.voice_state[p].active]
+        pool = idle if idle else MELODIC_POOL
+        phys = max(pool, key=lambda p: (self.voice_state[p].tl, -self.voice_state[p].last_tick))
+
+        events: List[OPL2Event] = []
+        old_owner = self.voice_state[phys].owner
+        if old_owner not in (-1, source):
+            if self.voice_state[phys].active:
+                events.extend(self.note_off(phys))
+            self.logical_channel[old_owner] = -1
+
+        self.logical_channel[source] = phys
+        self.voice_state[phys].owner = source
+        return phys, events
+
+    def process_melodic(self, source: int, note: int, inst: int, vol: int) -> List[OPL2Event]:
         events: List[OPL2Event] = []
 
         if note <= 0:
+            phys = self.logical_channel.get(source, -1)
+            if phys != -1 and self.voice_state[phys].active:
+                events.extend(self.note_off(phys))
             return events
 
-        if note < 50:
-            drum_patch = 253
-        elif note < 75:
-            drum_patch = 254
-        else:
-            drum_patch = 255
+        phys, steal_events = self.acquire_channel(source)
+        events.extend(steal_events)
+        state = self.voice_state[phys]
 
-        events.extend(self.patch_set(channel, drum_patch))
-        if not self.voice_state[channel].active or self.voice_state[channel].note != note:
-            events.extend(self.note_on(channel, note))
-        events.extend(self.volume_set(channel, volume, note, drum_patch))
+        patch_changed = state.patch != inst
+        note_changed = state.note != note
+
+        if patch_changed:
+            if state.active:
+                events.extend(self.note_off(phys))
+            events.extend(self.patch_set(phys, inst))
+            state.patch = inst
+            self.channel_ksl[phys] = self.patch_bank.get(inst, {}).get("c_ksl", 0)
+            state.volume = -1
+            state.tl = -1
+
+        if state.active and note_changed:
+            events.extend(self.note_off(phys))
+
+        if patch_changed or not state.active or note_changed:
+            events.extend(self.note_on(phys, note))
+            state.last_tick = self.tick
+
+        if patch_changed or note_changed or state.volume != vol or state.tl < 0:
+            events.extend(self.volume_set(phys, vol, note, inst, source))
+
         return events
 
     def translate_track(self, rpt) -> List[OPL2Event]:
         """Convert a current RPT pattern into a proper voice-state OPL2 stream."""
+        # Fully self-contained: reset all per-translation state here so a
+        # translator instance can safely be reused across tracks or not.
+        self.voice_state = {i: VoiceState() for i in range(9)}
+        self.channel_ksl = {i: 0 for i in range(9)}
+        self.logical_channel = {s: -1 for s in LOGICAL_MELODIC_SOURCES}
+        self.tick = 0
+
         out: List[OPL2Event] = []
         ticks_per_row = max(1, int(round(900.0 / max(1, getattr(rpt, "bpm", 150)))))
+
+        out.extend(self.rhythm_setup())
 
         for pattern_index in range(rpt.song_length):
             for row_index in range(32):
@@ -233,47 +400,18 @@ class OPL2Translator:
                 if cell_index >= len(rpt.patterns):
                     continue
 
+                self.tick += 1
                 row = rpt.patterns[cell_index]
                 row_events: List[OPL2Event] = []
-                for ch, cell in enumerate(row):
-                    if ch >= 9:
-                        continue
 
-                    note = getattr(cell, "note", 0)
-                    inst = getattr(cell, "inst", 0)
-                    vol = getattr(cell, "vol", 0)
+                for source in LOGICAL_MELODIC_SOURCES:
+                    cell = row[source]
+                    row_events.extend(self.process_melodic(
+                        source, getattr(cell, "note", 0), getattr(cell, "inst", 0), getattr(cell, "vol", 0)))
 
-                    if ch in (3, 4):
-                        row_events.extend(self.route_drum(ch, note, vol))
-                        continue
-
-                    state = self.voice_state[ch]
-
-                    if note <= 0:
-                        if state.active:
-                            row_events.extend(self.note_off(ch))
-                        continue
-
-                    patch_changed = state.patch != inst
-                    note_changed = state.note != note
-
-                    if patch_changed:
-                        if state.active:
-                            row_events.extend(self.note_off(ch))
-                        row_events.extend(self.patch_set(ch, inst))
-                        state.patch = inst
-                        self.channel_ksl[ch] = self.patch_bank.get(inst, {}).get("c_ksl", 0)
-                        state.volume = -1
-                        state.tl = -1
-
-                    if state.active and note_changed:
-                        row_events.extend(self.note_off(ch))
-
-                    if patch_changed or not state.active or note_changed:
-                        row_events.extend(self.note_on(ch, note))
-
-                    if patch_changed or note_changed or state.volume != vol or state.tl < 0:
-                        row_events.extend(self.volume_set(ch, vol, note, inst))
+                noise_note = getattr(row[3], "note", 0)
+                dmc_note = getattr(row[4], "note", 0)
+                row_events.extend(self.process_rhythm(noise_note, dmc_note))
 
                 if row_events:
                     row_events[-1].delay = ticks_per_row
@@ -290,8 +428,6 @@ def translate_nsf_track(nsf_path: str, track_idx: int = 0, loops: int = 1) -> Li
     translator = OPL2Translator()
     events: List[OPL2Event] = []
     for _ in range(max(1, loops)):
-        translator.voice_state = {i: VoiceState() for i in range(9)}
-        translator.channel_ksl = {i: 0 for i in range(9)}
         events.extend(translator.translate_track(rpt))
     return events
 
