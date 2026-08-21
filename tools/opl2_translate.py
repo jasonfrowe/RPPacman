@@ -122,7 +122,7 @@ RYT_HH = 0x01
 # n163_0 (the first two voices) were dominating the mix, triangle (the
 # voice that follows) was getting buried under them, so sq1/n163_0 come
 # down and triangle's earlier heavy attenuation is mostly backed off.
-MIX_TRIM_BY_SOURCE = {0: 4, 2: 14, 5: 4, 6: 6}
+MIX_TRIM_BY_SOURCE = {0: 4, 2: 10, 5: 4, 6: 6}
 
 # Per-logical-source fine-tune in cents, added on top of the exact f-number
 # computation in midi_to_fnum (positive = sharper). Empty by default; this
@@ -227,9 +227,17 @@ class OPL2Translator:
             # pulled from a published bank -- no authoritative byte-level
             # AdLib rhythm-kit reference turned up in research, so this is
             # the starting point to dial in by ear.
+            # First real listen confirmed it: too loud, lacks bass. Both
+            # traced to values rather than the rhythm-mode approach itself
+            # -- BD's own fixed pitch (see rhythm_setup) was MIDI 48
+            # (~131Hz, tom range, not sub-bass), and both operators' TL
+            # were near max loud (0/8) with no headroom against the rest of
+            # the mix. Carrier TL raised 0->12 and modulator TL raised
+            # 8->16 for more mixing headroom; pitch itself is fixed in
+            # rhythm_setup(), not here.
             253: {  # bass drum (channel 6, both operators)
-                  "m_ave": 0x01, "m_ksl": 0x08, "m_atdec": 0xF8, "m_susrel": 0x57, "m_wave": 0x00,
-                  "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x48, "c_wave": 0x00,
+                  "m_ave": 0x01, "m_ksl": 0x10, "m_atdec": 0xF8, "m_susrel": 0x57, "m_wave": 0x00,
+                  "c_ave": 0x01, "c_ksl": 0x0C, "c_atdec": 0xFA, "c_susrel": 0x48, "c_wave": 0x00,
                   "feedback": 0x06},
             254: {  # channel 7: modulator = hi-hat, carrier = snare
                   # In rhythm mode HH/SD are not FM-chained -- each operator
@@ -427,7 +435,10 @@ class OPL2Translator:
         # Rhythm-mode channels are never key-on'd through 0xB0-0xB8 (that bit
         # is controlled by 0xBD instead); only their pitch is set here, once
         # -- see process_rhythm for why HH/TOM/CYM don't get a per-hit pitch.
-        for phys, note in ((RHYTHM_BD_CH, 48), (RHYTHM_HHSD_CH, 84), (RHYTHM_TOMCYM_CH, 65)):
+        # BD dropped from MIDI 48 (~131Hz, tom range) to MIDI 36 (~65Hz,
+        # a real sub-bass kick fundamental) -- first listen flagged the
+        # old pitch as lacking bass.
+        for phys, note in ((RHYTHM_BD_CH, 36), (RHYTHM_HHSD_CH, 84), (RHYTHM_TOMCYM_CH, 65)):
             lo, hi = self.midi_to_fnum(note)
             events.append(OPL2Event(0xA0 + phys, lo))
             events.append(OPL2Event(0xB0 + phys, hi & 0x1F))
