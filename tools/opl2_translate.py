@@ -247,8 +247,10 @@ class OPL2Translator:
                   "m_ave": 0x01, "m_ksl": 0x0E, "m_atdec": 0xF8, "m_susrel": 0x57, "m_wave": 0x00,
                   "c_ave": 0x01, "c_ksl": 0x0A, "c_atdec": 0xFA, "c_susrel": 0x48, "c_wave": 0x00,
                   "feedback": 0x06},
-            # Hi-hat/tom/cymbal: 17 was still too loud. Splitting the
-            # difference between 17 (too loud) and 34 (too quiet) -> 25.
+            # Same story as kick: TL=25 was tuned before the melodic
+            # volume-rescale fix raised sq1/tri/n163_0/n163_1 by ~6dB, and
+            # rhythm voices don't go through that rescale -- eased ~6dB
+            # (8 steps) to match.
             # Snare (carrier) reverted back to unused -- cymbal routing
             # restored (see process_rhythm) -- so its TL is moot again;
             # left at its original pre-routing-change value.
@@ -256,16 +258,15 @@ class OPL2Translator:
                   # In rhythm mode HH/SD are not FM-chained -- each operator
                   # is independently audible -- so *_ksl's TL directly sets
                   # each voice's own loudness.
-                  "m_ave": 0x02, "m_ksl": 0x19, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
+                  "m_ave": 0x02, "m_ksl": 0x11, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
                   "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x39, "c_wave": 0x00,
                   "feedback": 0x04},
             # Tom's envelope shape reverted back to its own original
             # character (attack/decay/sustain/release/waveform) -- reusing
-            # kick's exact envelope didn't read well in context. TL (m_ksl)
-            # left at its currently-tuned volume level (25), not reverted.
+            # kick's exact envelope didn't read well in context.
             255: {  # channel 8: modulator = tom-tom, carrier = top cymbal
-                  "m_ave": 0x01, "m_ksl": 0x19, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
-                  "c_ave": 0x02, "c_ksl": 0x19, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
+                  "m_ave": 0x01, "m_ksl": 0x11, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
+                  "c_ave": 0x02, "c_ksl": 0x11, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
                   "feedback": 0x02},
             # Inst 38 (N163 ch0, the low voice): user-directed swap to
             # RPTracker's gm_bank[0x18] (Nylon Guitar) after further review
@@ -300,8 +301,18 @@ class OPL2Translator:
             38: {"m_ave": 0x21, "m_ksl": 0x4D, "m_atdec": 0xF9, "m_susrel": 0x55, "m_wave": 0x00,
                  "c_ave": 0x31, "c_ksl": 0x02, "c_atdec": 0xF9, "c_susrel": 0x04, "c_wave": 0x00,
                  "feedback": 0x0E},
-            39: {"m_ave": 0x01, "m_ksl": 0x00, "m_atdec": 0xF1, "m_susrel": 0x54, "m_wave": 0x00,
-                 "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xF1, "c_susrel": 0x54, "c_wave": 0x00,
+            # Inst 39 (n163_1): never got the same fix applied to
+            # 38/80/33 earlier, since it's not audible until ~49s in and
+            # so hadn't been reviewed yet. Same bug: EGT=0 (percussive --
+            # decays to silence regardless of key-on state) with a very
+            # slow decay rate (1), so a held note under glide slowly fades/
+            # warbles instead of holding steady -- reads as "weird". EGT
+            # set to sustain (1) on both operators, decay raised 1->9,
+            # carrier SL zeroed (our own volume system is the sole
+            # loudness authority for a held note, same reasoning as the
+            # other patches), modulator SL zeroed too for consistency.
+            39: {"m_ave": 0x21, "m_ksl": 0x00, "m_atdec": 0xF9, "m_susrel": 0x04, "m_wave": 0x00,
+                 "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x04, "c_wave": 0x00,
                  "feedback": 0x00},
         }
 
