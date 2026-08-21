@@ -239,22 +239,23 @@ class OPL2Translator:
                   "m_ave": 0x01, "m_ksl": 0x10, "m_atdec": 0xF8, "m_susrel": 0x57, "m_wave": 0x00,
                   "c_ave": 0x01, "c_ksl": 0x0C, "c_atdec": 0xFA, "c_susrel": 0x48, "c_wave": 0x00,
                   "feedback": 0x06},
+            # Hi-hat/tom/cymbal were all left at or near TL=0 (max loud)
+            # from an earlier pass that (before the process_rhythm
+            # retrigger bug was fixed) had them retriggering every frame
+            # and reading as inaudible/buzzy regardless of level. With
+            # retriggering fixed, they read as loud and dominant even
+            # after one moderate cut (tom/cym 0->16) -- cutting harder this
+            # round: HH modulator TL 0->34, tom/cym 16->34.
             254: {  # channel 7: modulator = hi-hat, carrier = snare
                   # In rhythm mode HH/SD are not FM-chained -- each operator
                   # is independently audible -- so *_ksl's TL directly sets
-                  # each voice's own loudness. Both were left at a moderate
-                  # attenuation on the assumption drums would sit back in
-                  # the mix; they were instead inaudible. Maxed to TL=0.
-                  "m_ave": 0x02, "m_ksl": 0x00, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
+                  # each voice's own loudness.
+                  "m_ave": 0x02, "m_ksl": 0x22, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
                   "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x39, "c_wave": 0x00,
                   "feedback": 0x04},
-            # Tom and cymbal (both operators independently audible in
-            # rhythm mode, same as HH/SD) were both at TL=0 (max loud) --
-            # first listen with the process_rhythm retrigger bug fixed
-            # flagged them as too loud. TL raised 0->16 on both.
             255: {  # channel 8: modulator = tom-tom, carrier = top cymbal
-                  "m_ave": 0x01, "m_ksl": 0x10, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
-                  "c_ave": 0x02, "c_ksl": 0x10, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
+                  "m_ave": 0x01, "m_ksl": 0x22, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
+                  "c_ave": 0x02, "c_ksl": 0x22, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
                   "feedback": 0x02},
             # Inst 38 (N163 ch0, the low voice): user-directed swap to
             # RPTracker's gm_bank[0x18] (Nylon Guitar) after further review
