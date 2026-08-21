@@ -243,9 +243,10 @@ class OPL2Translator:
             # voices don't go through that rescale, so kick's absolute
             # level never moved and it fell behind. TL eased ~6dB (8 steps)
             # to restore its prior relative presence.
+            # Still too quiet -- another ~6dB (8 steps).
             253: {  # bass drum (channel 6, both operators)
-                  "m_ave": 0x01, "m_ksl": 0x0E, "m_atdec": 0xF8, "m_susrel": 0x57, "m_wave": 0x00,
-                  "c_ave": 0x01, "c_ksl": 0x0A, "c_atdec": 0xFA, "c_susrel": 0x48, "c_wave": 0x00,
+                  "m_ave": 0x01, "m_ksl": 0x06, "m_atdec": 0xF8, "m_susrel": 0x57, "m_wave": 0x00,
+                  "c_ave": 0x01, "c_ksl": 0x02, "c_atdec": 0xFA, "c_susrel": 0x48, "c_wave": 0x00,
                   "feedback": 0x06},
             # Same story as kick: TL=25 was tuned before the melodic
             # volume-rescale fix raised sq1/tri/n163_0/n163_1 by ~6dB, and
@@ -254,19 +255,20 @@ class OPL2Translator:
             # Snare (carrier) reverted back to unused -- cymbal routing
             # restored (see process_rhythm) -- so its TL is moot again;
             # left at its original pre-routing-change value.
+            # Still too quiet -- another ~6dB (8 steps).
             254: {  # channel 7: modulator = hi-hat, carrier = snare
                   # In rhythm mode HH/SD are not FM-chained -- each operator
                   # is independently audible -- so *_ksl's TL directly sets
                   # each voice's own loudness.
-                  "m_ave": 0x02, "m_ksl": 0x11, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
+                  "m_ave": 0x02, "m_ksl": 0x09, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
                   "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x39, "c_wave": 0x00,
                   "feedback": 0x04},
             # Tom's envelope shape reverted back to its own original
             # character (attack/decay/sustain/release/waveform) -- reusing
             # kick's exact envelope didn't read well in context.
             255: {  # channel 8: modulator = tom-tom, carrier = top cymbal
-                  "m_ave": 0x01, "m_ksl": 0x11, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
-                  "c_ave": 0x02, "c_ksl": 0x11, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
+                  "m_ave": 0x01, "m_ksl": 0x09, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
+                  "c_ave": 0x02, "c_ksl": 0x09, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
                   "feedback": 0x02},
             # Inst 38 (N163 ch0, the low voice): user-directed swap to
             # RPTracker's gm_bank[0x18] (Nylon Guitar) after further review
@@ -311,7 +313,17 @@ class OPL2Translator:
             # carrier SL zeroed (our own volume system is the sole
             # loudness authority for a held note, same reasoning as the
             # other patches), modulator SL zeroed too for consistency.
-            39: {"m_ave": 0x21, "m_ksl": 0x00, "m_atdec": 0xF9, "m_susrel": 0x04, "m_wave": 0x00,
+            # This voice's actual note data (MIDI 24-37, real sub-bass/bass
+            # territory) marks it as a bass line, not a lead -- and the
+            # modulator was at TL=0, the absolute maximum FM depth. Heavy
+            # FM modulation is much more perceptually unstable at a low
+            # fundamental than at a higher pitch (the modulator's own
+            # frequency, MULT=1, is equally low, and a deep, slow-beating
+            # modulation at that register reads as "warble" rather than
+            # brightness). Same fix as triangle's redesign: quiet the
+            # modulator drastically (0 -> 50) for a cleaner, closer-to-sine
+            # bass tone instead of a dense, unstable FM voice.
+            39: {"m_ave": 0x21, "m_ksl": 0x32, "m_atdec": 0xF9, "m_susrel": 0x04, "m_wave": 0x00,
                  "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x04, "c_wave": 0x00,
                  "feedback": 0x00},
         }
