@@ -638,12 +638,17 @@ class NSFConverter:
                     linear_reload_flag = False
 
                 # Half-frame clock: length counters, unless each channel's
-                # own halt bit is set.
+                # own halt bit is set. Triangle's halt bit is 0x80 (the
+                # same physical latch as its linear-counter control flag);
+                # sq1/sq2/noise use 0x20 -- confirmed against libgme's own
+                # Nes_Apu.cpp ("triangle.clock_length(0x80); // different
+                # bit for halt flag on triangle").
                 if s % 2 == 1:
                     for ch, reg_base in HALT_BIT_REG.items():
                         if length_counter[ch] <= 0:
                             continue
-                        if not (apu_regs[reg_base] & 0x20):
+                        halt_bit = 0x80 if ch == 'tri' else 0x20
+                        if not (apu_regs[reg_base] & halt_bit):
                             length_counter[ch] -= 1
 
                 if s % keep_every != keep_every - 1:
