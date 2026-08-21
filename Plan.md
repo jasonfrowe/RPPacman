@@ -294,6 +294,54 @@ Regenerated `music/PacManCE_01.BIN` from the new pipeline (109056 bytes, 27141 e
 - The importer output is the semantic source of truth, while the runtime contract is the final serializer truth.
 - The first 60 seconds of `NSF/track0.flac` remains the correct benchmark for final tuning once the stream structure is valid.
 
+### 2026-08-21: automatic patch matching (differential evolution against real chip waveforms)
+
+Built a lab harness (scratchpad `triangle_lab/`, not part of the repo) to
+automatically search OPL2 2-op patch parameters against the real NES
+channel's actual waveform, rather than tuning by ear alone: synthesize a
+ground-truth reference (triangle's exact 32-step staircase; pulse's exact
+duty-cycle rectangle at the one duty value this track ever uses; N163's
+*actual decoded wavetable*, read directly out of chip RAM rather than
+guessed), render an OPL2 candidate for the same frequency, extract a
+normalized harmonic-amplitude feature vector from each (fundamental +
+14 overtones, not a raw spectral distance -- interpretable and tied to
+what patch parameters actually shape), and run `scipy.optimize.
+differential_evolution` over connection type, feedback, modulator MULT,
+both waveforms, and modulator TL (carrier MULT fixed at 1 so pitch never
+shifts). Verified every result's true FFT peak lands on the target
+frequency (no accidental octave shift from waveforms like abs-sine)
+before trusting it.
+
+Results applied to the repo: triangle (33) 0.068->0.035, sq1 (80)
+0.514->0.183, n163_0/39 (38/39) ~1.2->~0.25 each (confirmed n163_0 and
+n163_1 use the *literal same* real wavetable, just different
+frequencies). All four regenerated across all 22 tracks.
+
+Follow-up: n163_0's matched patch read as "too clean" after living with
+it. Traced why: its real note duration is a fast ~0.11s arpeggio (three
+notes cycling continuously, confirmed at the same cadence in both the
+raw register trace and our own decoded event stream -- our playback
+already reproduces this timing correctly, nothing lost there), but the
+original match used an artificial 0.5s held tone and discarded the
+first 40% as "attack transient" to isolate steady-state -- a scenario
+that barely exists in the real music, where there's almost no steady
+state at all. Re-ran the match at a realistic 0.11s duration including
+the attack -- converged to the *same* distance (0.257) across two
+different seeds/budgets, meaning the current patch already sits at (or
+very near) this objective's achievable optimum. The "too clean" quality
+is something this harmonic-amplitude objective can't detect (likely
+broadband noise-floor grit or fine DAC-level texture, not harmonic
+balance) rather than something more searching would fix. Noted the
+pre-optimization hand-tuned patch inline as a fallback if the DE match
+doesn't hold up:
+  38: {"m_ave": 0x22, "m_ksl": 0x46, "m_atdec": 0xF9, "m_susrel": 0x55, "m_wave": 0x00,
+       "c_ave": 0x31, "c_ksl": 0x02, "c_atdec": 0xF9, "c_susrel": 0x04, "c_wave": 0x00,
+       "feedback": 0x0E}
+
+Drums (kick, hi-hat/tom/cymbal) intentionally not run through this
+harness yet -- they need a different reference approach (DMC sample
+decode, noise-vs-noise matching) rather than tone matching.
+
 ## Git discipline
 
 - Keep this branch as the work-tracking branch.

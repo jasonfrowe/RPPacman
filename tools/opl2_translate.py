@@ -350,6 +350,19 @@ class OPL2Translator:
             # closer): carrier half-sine (wave=1, not sine), high feedback.
             # Verified the true fundamental peak lands on target with a
             # full harmonic series (no octave shift) before trusting it.
+            # User feedback after living with it: reads as "too clean" /
+            # less interesting than before. Re-ran the match at a
+            # realistic ~0.11s note duration (this voice's real note
+            # length is a fast arpeggio, not a sustained tone) including
+            # the attack transient instead of skipping it -- converged on
+            # the same distance (0.257) as this patch across two different
+            # seeds/budgets, so this already sits at (or very near) this
+            # objective's optimum; nothing better was found. Possible
+            # fallback if this still doesn't satisfy: the pre-optimization
+            # hand-tuned patch --
+            #   38: {"m_ave": 0x22, "m_ksl": 0x46, "m_atdec": 0xF9, "m_susrel": 0x55, "m_wave": 0x00,
+            #        "c_ave": 0x31, "c_ksl": 0x02, "c_atdec": 0xF9, "c_susrel": 0x04, "c_wave": 0x00,
+            #        "feedback": 0x0E},
             38: {"m_ave": 0x21, "m_ksl": 0x1E, "m_atdec": 0xF9, "m_susrel": 0x08, "m_wave": 0x00,
                  "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x08, "c_wave": 0x01,
                  "feedback": 0x0C},
