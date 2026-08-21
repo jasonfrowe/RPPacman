@@ -20,8 +20,14 @@ import argparse
 import json
 import math
 import os
+import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Dict, Tuple
+
+TOOLS_DIR = Path(__file__).resolve().parent
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
 
 from import_nsf import NSFConverter
 
@@ -73,15 +79,17 @@ class OPL2Translator:
     def __init__(self):
         self.voice_state: Dict[int, VoiceState] = {i: VoiceState() for i in range(9)}
         self.channel_ksl: Dict[int, int] = {i: 0 for i in range(9)}
+        # Pac-Man CE leans toward a bright, punchy arcade synth: tight lead,
+        # clipped bass, and dry support voices with little extra resonance.
         self.patch_bank: Dict[int, Dict[str, int]] = {
-            80: {"m_ave": 0x21, "m_ksl": 0x1D, "m_atdec": 0xF2, "m_susrel": 0x0F, "m_wave": 0x03,
-                 "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF2, "c_susrel": 0x18, "c_wave": 0x00,
+            80: {"m_ave": 0x21, "m_ksl": 0x15, "m_atdec": 0xF4, "m_susrel": 0x18, "m_wave": 0x03,
+                 "c_ave": 0x31, "c_ksl": 0x00, "c_atdec": 0xF4, "c_susrel": 0x18, "c_wave": 0x00,
                  "feedback": 0x00},
-            81: {"m_ave": 0x41, "m_ksl": 0x11, "m_atdec": 0xF0, "m_susrel": 0xFF, "m_wave": 0x00,
-                 "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xF0, "c_susrel": 0xFF, "c_wave": 0x00,
+            81: {"m_ave": 0x41, "m_ksl": 0x0C, "m_atdec": 0xF2, "m_susrel": 0xFF, "m_wave": 0x00,
+                 "c_ave": 0x11, "c_ksl": 0x00, "c_atdec": 0xF2, "c_susrel": 0xFF, "c_wave": 0x00,
                  "feedback": 0x02},
-            33: {"m_ave": 0x01, "m_ksl": 0x18, "m_atdec": 0xD4, "m_susrel": 0xF2, "m_wave": 0x00,
-                 "c_ave": 0x21, "c_ksl": 0x80, "c_atdec": 0xC4, "c_susrel": 0x8A, "c_wave": 0x00,
+            33: {"m_ave": 0x01, "m_ksl": 0x10, "m_atdec": 0xD6, "m_susrel": 0xF2, "m_wave": 0x00,
+                 "c_ave": 0x10, "c_ksl": 0x80, "c_atdec": 0xC6, "c_susrel": 0x8A, "c_wave": 0x00,
                  "feedback": 0x02},
             115: {"m_ave": 0x32, "m_ksl": 0x44, "m_atdec": 0xF8, "m_susrel": 0xFF, "m_wave": 0x00,
                   "c_ave": 0x11, "c_ksl": 0x00, "c_atdec": 0xF5, "c_susrel": 0x7F, "c_wave": 0x00,
@@ -123,17 +131,16 @@ class OPL2Translator:
 
     @staticmethod
     def velocity_to_opl_tl(velocity: int) -> int:
-        """Convert a linear channel volume to OPL2 log-space TL."""
+        """Map the importer's linear volume into the OPL2 TL logarithmic range."""
         v = max(0, min(63, int(velocity)))
         if v <= 0:
             return 63
         if v >= 63:
             return 0
 
-        # OPL2 TL is effectively logarithmic. Approximate that response as a
-        # perceptual curve while keeping the full 0..63 range monotonic.
+        # Use a perceptual log curve centered on the 0..63 OPL2 TL range.
         ratio = math.log2(v + 1) / math.log2(64)
-        return int(round(63 * (1.0 - ratio)))
+        return int(round(63.0 * (1.0 - ratio)))
 
     @staticmethod
     def _reg_for_channel(channel: int, base: int) -> int:
@@ -215,6 +222,7 @@ class OPL2Translator:
     def translate_track(self, rpt) -> List[OPL2Event]:
         """Convert a current RPT pattern into a proper voice-state OPL2 stream."""
         out: List[OPL2Event] = []
+        ticks_per_row = max(1, int(round(900.0 / max(1, getattr(rpt, "bpm", 150)))))
 
         for pattern_index in range(rpt.song_length):
             for row_index in range(32):
@@ -244,9 +252,16 @@ class OPL2Translator:
                         continue
 
                     if state.patch != inst:
+                        if state.active:
+                            row_events.extend(self.note_off(ch))
                         row_events.extend(self.patch_set(ch, inst))
                         state.patch = inst
                         self.channel_ksl[ch] = self.patch_bank.get(inst, {}).get("c_ksl", 0)
+                        if note > 0:
+                            row_events.extend(self.note_on(ch, note))
+                            state.note = note
+                            state.active = True
+                        continue
 
                     if state.active and state.note != note:
                         row_events.extend(self.note_off(ch))
@@ -258,8 +273,10 @@ class OPL2Translator:
                         row_events.extend(self.volume_set(ch, vol))
 
                 if row_events:
-                    row_events[-1].delay = 1
+                    row_events[-1].delay = ticks_per_row
                     out.extend(row_events)
+                else:
+                    out.append(OPL2Event(0x01, 0x20, ticks_per_row))
 
         return out
 
