@@ -122,7 +122,7 @@ RYT_HH = 0x01
 # n163_0 (the first two voices) were dominating the mix, triangle (the
 # voice that follows) was getting buried under them, so sq1/n163_0 come
 # down and triangle's earlier heavy attenuation is mostly backed off.
-MIX_TRIM_BY_SOURCE = {0: 4, 2: 20, 5: 4, 6: 6}
+MIX_TRIM_BY_SOURCE = {0: 4, 2: 14, 5: 4, 6: 6}
 
 # Per-logical-source fine-tune in cents, added on top of the exact f-number
 # computation in midi_to_fnum (positive = sharper). Empty by default; this
@@ -160,26 +160,54 @@ class OPL2Translator:
               # authority for a held note; the patch's sustain level should
               # just be "as loud as the envelope gets", not a second
               # independent attenuation on top.
-              80: {"m_ave": 0x71, "m_ksl": 0x1C, "m_atdec": 0x59, "m_susrel": 0x03, "m_wave": 0x00,
+              # Now that the triangle investigation confirmed timing is
+              # correct, revisited sq1's patch for the same class of
+              # perceptual-pitch-instability issue: gm_bank[0x3B]'s
+              # modulator has VIB (vibrato) enabled -- wobbles the
+              # modulator's own frequency over time, which in FM mode
+              # continuously varies the effective modulation index (and so
+              # the carrier's timbre) rather than shifting the carrier's
+              # actual pitch. That reads as an unstable/uncertain pitch,
+              # not a consistent sharp or flat -- matches "off, can't tell
+              # which way" better than a real tuning error would. Feedback
+              # was also at 7/7, the maximum: heavy modulator self-feedback
+              # pushes toward dense, less cleanly-tonal harmonic content,
+              # compounding the same effect. VIB cleared on the modulator;
+              # feedback eased from 7 to 3.
+              # Follow-up: modulator also had KSR (key-scale rate) set
+              # while the carrier didn't -- that scales the modulator's own
+              # envelope timing by pitch but leaves the carrier's alone, so
+              # the same instrument's attack/decay character subtly shifts
+              # across the octave range instead of staying consistent. Real
+              # NES pulse channels have no such pitch-dependent envelope
+              # scaling at all. Cleared to match the carrier.
+              80: {"m_ave": 0x21, "m_ksl": 0x1C, "m_atdec": 0x59, "m_susrel": 0x03, "m_wave": 0x00,
                   "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0x59, "c_susrel": 0x07, "c_wave": 0x00,
-                  "feedback": 0x0E},
+                  "feedback": 0x06},
               81: {"m_ave": 0x41, "m_ksl": 0x0C, "m_atdec": 0xF2, "m_susrel": 0xFF, "m_wave": 0x00,
                   "c_ave": 0x11, "c_ksl": 0x00, "c_atdec": 0xF2, "c_susrel": 0xFF, "c_wave": 0x00,
                   "feedback": 0x02},
-              # Inst 33 (triangle): back to RPTracker's gm_bank[0x50]
-              # (Square Lead) -- the very first one tried, back when the
-              # whole-tone fnum bug and the linear-counter gate bug were
-              # both still live, so "sounds flat" then almost certainly
-              # meant the real pitch bug, not this patch. Both operators
-              # already sustain-type with MULT=1, same as sq1 and as
-              # Acoustic Bass (which still read as flat -- the modulator-
-              # MULT hypothesis from that attempt looks weaker now). Usual
-              # decay-rate safety margin applied to both operators (2->9);
-              # carrier SL was already near 0 and just zeroed exactly;
-              # modulator's wave=3 (quarter-sine, not sine) and feedback=0
-              # (no self-modulation) both left as the original patch had
-              # them.
-              33: {"m_ave": 0x21, "m_ksl": 0x1D, "m_atdec": 0xF9, "m_susrel": 0x0F, "m_wave": 0x03,
+              # Inst 33 (triangle): abandoning the "Square Lead"/GM-patch
+              # lineage entirely. Timing is now confirmed correct (verified
+              # against real hardware and the user's own reference
+              # recording -- the ~7s entrance is real, not a decode bug),
+              # so the remaining "flat"/off complaint is a genuine timbre
+              # problem, not a hidden pitch or timing bug. Root cause:
+              # gm_bank[0x50]'s modulator ran at TL=29/63 (fairly strong FM
+              # depth) through a quarter-sine wave (m_wave=3) -- a bright,
+              # asymmetric, harmonically busy tone. A real NES triangle is
+              # the opposite: a clean, quickly-rolling-off wave with almost
+              # all its energy in the fundamental, which is *why* it's so
+              # easy for the ear to pitch-track -- any patch with prominent
+              # non-fundamental energy will read as "off" even at an exact
+              # fundamental frequency, purely from psychoacoustic pitch
+              # ambiguity. Redesigned as a near-pure sine: modulator TL
+              # raised to 58/63 (very quiet -- light FM coloration, not
+              # silence) and switched from quarter-sine to plain sine to
+              # remove the asymmetric buzz; carrier stays sine. Same
+              # fast-attack/decay=9/carrier-SL=0 envelope shape already
+              # established as necessary for glide-without-fade.
+              33: {"m_ave": 0x21, "m_ksl": 0x3A, "m_atdec": 0xF9, "m_susrel": 0x0F, "m_wave": 0x00,
                   "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x08, "c_wave": 0x00,
                  "feedback": 0x00},
             115: {"m_ave": 0x32, "m_ksl": 0x44, "m_atdec": 0xF8, "m_susrel": 0xFF, "m_wave": 0x00,

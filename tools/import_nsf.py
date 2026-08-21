@@ -602,9 +602,15 @@ class NSFConverter:
                 noise_period = apu_regs[14] & 0x0F
                 noise_raw_note = NOISE_PERIOD_TO_MIDI[noise_period]
 
+            # $4011 (direct-load) is not a useful "is DMC sounding" signal
+            # here: real DMC sample bytes are read autonomously from ROM by
+            # the hardware once $4015 bit4 is enabled, not pushed via
+            # further $4011 writes -- this driver always primes $4011 to 0
+            # immediately before every kick trigger, so gating on it being
+            # nonzero can never fire. $4015's own enable bit is the real
+            # "DMC channel active" signal.
             dmc_en = bool(status & 0x10)
-            dmc_val = apu_regs[0x11] & 0x7F
-            dmc_note = 38 if (dmc_en and dmc_val > 0) else 0
+            dmc_note = 38 if dmc_en else 0
 
             num_n163 = ((n163_ram[0x7F] >> 4) & 0x07) + 1
             n163_active_notes = []
