@@ -242,27 +242,22 @@ class OPL2Translator:
                   "feedback": 0x06},
             # Hi-hat/tom/cymbal: 17 was still too loud. Splitting the
             # difference between 17 (too loud) and 34 (too quiet) -> 25.
-            # Snare (carrier) was never targeted by process_rhythm until
-            # now (cymbal's noise bucket was reassigned to it) so it was
-            # left at TL=0 (max loud) the whole time nothing used it --
-            # brought down to match hi-hat's level now that it actually
-            # fires.
+            # Snare (carrier) reverted back to unused -- cymbal routing
+            # restored (see process_rhythm) -- so its TL is moot again;
+            # left at its original pre-routing-change value.
             254: {  # channel 7: modulator = hi-hat, carrier = snare
                   # In rhythm mode HH/SD are not FM-chained -- each operator
                   # is independently audible -- so *_ksl's TL directly sets
                   # each voice's own loudness.
                   "m_ave": 0x02, "m_ksl": 0x19, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
-                  "c_ave": 0x01, "c_ksl": 0x19, "c_atdec": 0xFA, "c_susrel": 0x39, "c_wave": 0x00,
+                  "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x39, "c_wave": 0x00,
                   "feedback": 0x04},
-            # Tom's modulator now reuses the kick drum's own (well-liked)
-            # envelope character exactly -- same attack/decay/sustain/
-            # release/waveform as instrument 253's modulator -- just at
-            # tom's own higher fixed pitch (rhythm_setup, MIDI 65 vs kick's
-            # 36). Cymbal (carrier) is no longer triggered by anything
-            # (its noise bucket now goes to snare instead) but its patch is
-            # left in place in case that routing changes again.
+            # Tom's envelope shape reverted back to its own original
+            # character (attack/decay/sustain/release/waveform) -- reusing
+            # kick's exact envelope didn't read well in context. TL (m_ksl)
+            # left at its currently-tuned volume level (25), not reverted.
             255: {  # channel 8: modulator = tom-tom, carrier = top cymbal
-                  "m_ave": 0x01, "m_ksl": 0x16, "m_atdec": 0xF8, "m_susrel": 0x57, "m_wave": 0x00,
+                  "m_ave": 0x01, "m_ksl": 0x19, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
                   "c_ave": 0x02, "c_ksl": 0x19, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
                   "feedback": 0x02},
             # Inst 38 (N163 ch0, the low voice): user-directed swap to
@@ -496,9 +491,11 @@ class OPL2Translator:
             elif noise_note >= 55:
                 target = RYT_TOM
             else:
-                # Snare in place of cymbal: channel 7's carrier (SD) was
-                # sitting unused since nothing ever targeted it.
-                target = RYT_SD
+                # Reverted: routing this bucket to snare (in place of
+                # cymbal) made kick+snare read as "frog"-like together and
+                # lost cymbal made the kit feel thin/missing. Back to
+                # cymbal.
+                target = RYT_CYM
             if target != self.prev_noise_bit:
                 bits |= target
             self.prev_noise_bit = target
