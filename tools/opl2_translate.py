@@ -248,9 +248,13 @@ class OPL2Translator:
                   "m_ave": 0x02, "m_ksl": 0x00, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
                   "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x39, "c_wave": 0x00,
                   "feedback": 0x04},
+            # Tom and cymbal (both operators independently audible in
+            # rhythm mode, same as HH/SD) were both at TL=0 (max loud) --
+            # first listen with the process_rhythm retrigger bug fixed
+            # flagged them as too loud. TL raised 0->16 on both.
             255: {  # channel 8: modulator = tom-tom, carrier = top cymbal
-                  "m_ave": 0x01, "m_ksl": 0x00, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
-                  "c_ave": 0x02, "c_ksl": 0x00, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
+                  "m_ave": 0x01, "m_ksl": 0x10, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
+                  "c_ave": 0x02, "c_ksl": 0x10, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
                   "feedback": 0x02},
             # Inst 38 (N163 ch0, the low voice): user-directed swap to
             # RPTracker's gm_bank[0x18] (Nylon Guitar) after further review
