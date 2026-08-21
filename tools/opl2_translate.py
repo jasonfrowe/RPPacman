@@ -220,9 +220,20 @@ class OPL2Translator:
               # 2 (an octave-up partial) at a moderate-quiet TL for a
               # little arcade sparkle without destabilizing the
               # fundamental.
-              33: {"m_ave": 0x22, "m_ksl": 0x28, "m_atdec": 0xF9, "m_susrel": 0x0F, "m_wave": 0x00,
+              # More fuzz/harmonics to blend it in rather than stand out
+              # as a lone pure tone: a real NES triangle wave's spectrum is
+              # odd harmonics only (1st, 3rd, 5th...) -- MULT=2 on the
+              # overtone was actually an *even* harmonic a real triangle
+              # never has, which may have been working against the "arcade"
+              # blend rather than helping. Switched to MULT=3 (a real odd
+              # partial), raised its level a bit (TL 40->32) for more
+              # presence, and added a touch of self-feedback (0->2) for
+              # extra grit in that overtone specifically. Carrier stays
+              # exactly as before: clean, unmodulated, additive connection
+              # -- its own pitch is still never touched.
+              33: {"m_ave": 0x23, "m_ksl": 0x20, "m_atdec": 0xF9, "m_susrel": 0x0F, "m_wave": 0x00,
                   "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x08, "c_wave": 0x00,
-                 "feedback": 0x01},
+                 "feedback": 0x05},
             115: {"m_ave": 0x32, "m_ksl": 0x44, "m_atdec": 0xF8, "m_susrel": 0xFF, "m_wave": 0x00,
                   "c_ave": 0x11, "c_ksl": 0x00, "c_atdec": 0xF5, "c_susrel": 0x7F, "c_wave": 0x00,
                   "feedback": 0x04},
