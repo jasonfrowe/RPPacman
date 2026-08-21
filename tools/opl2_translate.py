@@ -207,9 +207,22 @@ class OPL2Translator:
               # remove the asymmetric buzz; carrier stays sine. Same
               # fast-attack/decay=9/carrier-SL=0 envelope shape already
               # established as necessary for glide-without-fade.
-              33: {"m_ave": 0x21, "m_ksl": 0x3A, "m_atdec": 0xF9, "m_susrel": 0x0F, "m_wave": 0x00,
+              # "Out of tune / not arcade-like": the near-pure-sine FM
+              # redesign kept pitch exact but made the carrier the *only*
+              # source of any energy -- against a busy mix, a single
+              # unreinforced sine partial is easy for the ear to lose track
+              # of, which reads as pitch ambiguity even though nothing is
+              # mistuned. Switched to additive connection (bit0 of
+              # feedback) so the carrier stays a completely clean,
+              # unmodulated sine (pitch never gets touched by the
+              # modulator) while the modulator becomes an independent,
+              # quiet overtone instead of an FM modulator -- MULT raised to
+              # 2 (an octave-up partial) at a moderate-quiet TL for a
+              # little arcade sparkle without destabilizing the
+              # fundamental.
+              33: {"m_ave": 0x22, "m_ksl": 0x28, "m_atdec": 0xF9, "m_susrel": 0x0F, "m_wave": 0x00,
                   "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x08, "c_wave": 0x00,
-                 "feedback": 0x00},
+                 "feedback": 0x01},
             115: {"m_ave": 0x32, "m_ksl": 0x44, "m_atdec": 0xF8, "m_susrel": 0xFF, "m_wave": 0x00,
                   "c_ave": 0x11, "c_ksl": 0x00, "c_atdec": 0xF5, "c_susrel": 0x7F, "c_wave": 0x00,
                   "feedback": 0x04},
@@ -244,10 +257,16 @@ class OPL2Translator:
             # level never moved and it fell behind. TL eased ~6dB (8 steps)
             # to restore its prior relative presence.
             # Still too quiet -- another ~6dB (8 steps).
+            # "Shallow": volume alone wasn't the issue -- lacked real boom.
+            # Feedback (self-modulation on the carrier) raised 3->6 for a
+            # fuller, more harmonically rich low end; carrier release
+            # slowed (rate 8->3, lower rate = slower/longer decay) and
+            # given a modest sustain level (0->3) for an actual "thump...
+            # boom" tail instead of a short click.
             253: {  # bass drum (channel 6, both operators)
                   "m_ave": 0x01, "m_ksl": 0x06, "m_atdec": 0xF8, "m_susrel": 0x57, "m_wave": 0x00,
-                  "c_ave": 0x01, "c_ksl": 0x02, "c_atdec": 0xFA, "c_susrel": 0x48, "c_wave": 0x00,
-                  "feedback": 0x06},
+                  "c_ave": 0x01, "c_ksl": 0x02, "c_atdec": 0xFA, "c_susrel": 0x33, "c_wave": 0x00,
+                  "feedback": 0x0C},
             # Same story as kick: TL=25 was tuned before the melodic
             # volume-rescale fix raised sq1/tri/n163_0/n163_1 by ~6dB, and
             # rhythm voices don't go through that rescale -- eased ~6dB
@@ -300,7 +319,13 @@ class OPL2Translator:
             # connection); feedback amount is the main OPL2 lever for how
             # much a sine operator buzzes/grits up via self-modulation, and
             # is the most direct thing to borrow for the grit this lost.
-            38: {"m_ave": 0x21, "m_ksl": 0x4D, "m_atdec": 0xF9, "m_susrel": 0x55, "m_wave": 0x00,
+            # "No upper end buzz": feedback was already at max (7) and the
+            # modulator wasn't especially quiet (TL=13), so pushed further
+            # -- modulator MULT raised 1->2 (an actual higher-harmonic
+            # generator, not just louder FM depth at the same rate) and TL
+            # dropped 13->6 for a deeper FM index. Carrier MULT left at 1
+            # so the fundamental pitch doesn't move.
+            38: {"m_ave": 0x22, "m_ksl": 0x46, "m_atdec": 0xF9, "m_susrel": 0x55, "m_wave": 0x00,
                  "c_ave": 0x31, "c_ksl": 0x02, "c_atdec": 0xF9, "c_susrel": 0x04, "c_wave": 0x00,
                  "feedback": 0x0E},
             # Inst 39 (n163_1): never got the same fix applied to
@@ -323,7 +348,12 @@ class OPL2Translator:
             # brightness). Same fix as triangle's redesign: quiet the
             # modulator drastically (0 -> 50) for a cleaner, closer-to-sine
             # bass tone instead of a dense, unstable FM voice.
-            39: {"m_ave": 0x21, "m_ksl": 0x32, "m_atdec": 0xF9, "m_susrel": 0x04, "m_wave": 0x00,
+            # Still a warble at TL=50 -- pushed further toward the
+            # near-silent-modulator approach that worked for triangle
+            # (TL=58 there); this is a low bass register so the residual
+            # modulation index at TL=50 was apparently still enough to
+            # read as unstable. TL 50->60, close to fully silent.
+            39: {"m_ave": 0x21, "m_ksl": 0x3C, "m_atdec": 0xF9, "m_susrel": 0x04, "m_wave": 0x00,
                  "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x04, "c_wave": 0x00,
                  "feedback": 0x00},
         }
@@ -482,10 +512,9 @@ class OPL2Translator:
         # Rhythm-mode channels are never key-on'd through 0xB0-0xB8 (that bit
         # is controlled by 0xBD instead); only their pitch is set here, once
         # -- see process_rhythm for why HH/TOM/CYM don't get a per-hit pitch.
-        # BD dropped from MIDI 48 (~131Hz, tom range) to MIDI 36 (~65Hz,
-        # a real sub-bass kick fundamental) -- first listen flagged the
-        # old pitch as lacking bass.
-        for phys, note in ((RHYTHM_BD_CH, 36), (RHYTHM_HHSD_CH, 84), (RHYTHM_TOMCYM_CH, 65)):
+        # BD dropped further, MIDI 36 (~65Hz) -> 30 (~46Hz) -- "shallow"
+        # feedback: needed more real sub-bass weight, not just volume.
+        for phys, note in ((RHYTHM_BD_CH, 30), (RHYTHM_HHSD_CH, 84), (RHYTHM_TOMCYM_CH, 65)):
             lo, hi = self.midi_to_fnum(note)
             events.append(OPL2Event(0xA0 + phys, lo))
             events.append(OPL2Event(0xB0 + phys, hi & 0x1F))
