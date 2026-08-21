@@ -106,12 +106,31 @@ Translate the semantic stream into register-level events:
 
 - [x] Branch confirmed: `NFS-Music-Take2`
 - [x] Plan saved to `Plan.md`
-- [ ] Create the translation event model for importer output
-- [ ] Implement direct melodic note-to-OPL2 translation
-- [ ] Add drum/percussion mapping from RPTracker patch definitions
+- [x] Create the translation event model for importer output
+- [x] Implement direct melodic note-to-OPL2 translation
+- [x] Add drum/percussion mapping from RPTracker patch definitions
 - [ ] Validate against `NSF/track0.flac`
 - [ ] Expand to all 22 tracks
-- [ ] Finalize and record progress in Git
+- [x] Finalize and record progress in Git
+
+### Active phase
+
+- [x] Phase 1: importer-driven semantic event model for the first track
+- [x] Phase 1: direct note-to-OPL2 translation and volume mapping skeleton
+- [ ] Phase 1: validation against `NSF/track0.flac`
+- [x] Phase 1: generated a structurally sane Pac-Man CE asset at `music/PacManCE_01.BIN`
+
+The importer output is now being treated as the semantic source, and a file-level translation pass has been created in `tools/opl2_translate.py` using the runtime contract in `src/opl.c`. We identified the true `.BIN` contract from the RPTracker export path: each record is `[reg, val, delay_lo, delay_hi]`, followed by an end marker of `0xFF, 0xFF, 0x00, 0x00`, and the file is padded to 512 bytes. The translator was then rewritten to match that contract, and the generated output now feels sane instead of representing a raw patch dump.
+
+## What we learned
+
+- The RPTracker export file is not a raw OPL2 patch list; it is a sequence of register writes with delay metadata.
+- The runtime in `src/opl.c` reads 4-byte entries and treats `0xFF,0xFF` as the loop/restart sentinel.
+- Earlier broken output came from emitting un-timed register bursts with no end marker or 512-byte alignment.
+- The correct architecture is a stateful OPL2 voice translator, not a guessed patch-bank hack.
+- Volume must be mapped in the OPL2 log-space TL domain, and should not force `NOTE_OFF` when changing amplitude.
+- The importer output is the semantic source of truth, while the runtime contract is the final serializer truth.
+- The first 60 seconds of `NSF/track0.flac` remains the correct benchmark for final tuning once the stream structure is valid.
 
 ## Git discipline
 
