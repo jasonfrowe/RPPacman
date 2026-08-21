@@ -278,10 +278,19 @@ class OPL2Translator:
             # slowed (rate 8->3, lower rate = slower/longer decay) and
             # given a modest sustain level (0->3) for an actual "thump...
             # boom" tail instead of a short click.
+            # Replaced by a differential-evolution search against the
+            # *actual decoded DMC sample* (delta-modulated PCM, decoded
+            # directly from the NSF ROM data at $C000, rate index 0x0D --
+            # see scratchpad triangle_lab/run_kick.py). A one-shot
+            # transient has no stable fundamental, so this used an
+            # octave-band spectral envelope instead of the harmonic-
+            # amplitude vector used for the tonal voices. Distance
+            # 0.564 -> 0.0405 (~14x closer): additive connection, half-
+            # sine modulator, abs-sine carrier.
             253: {  # bass drum (channel 6, both operators)
-                  "m_ave": 0x01, "m_ksl": 0x06, "m_atdec": 0xF8, "m_susrel": 0x57, "m_wave": 0x00,
-                  "c_ave": 0x01, "c_ksl": 0x02, "c_atdec": 0xFA, "c_susrel": 0x33, "c_wave": 0x00,
-                  "feedback": 0x0C},
+                  "m_ave": 0x02, "m_ksl": 0x2A, "m_atdec": 0xF9, "m_susrel": 0x50, "m_wave": 0x01,
+                  "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x3E, "c_wave": 0x02,
+                  "feedback": 0x09},
             # Same story as kick: TL=25 was tuned before the melodic
             # volume-rescale fix raised sq1/tri/n163_0/n163_1 by ~6dB, and
             # rhythm voices don't go through that rescale -- eased ~6dB
@@ -302,13 +311,18 @@ class OPL2Translator:
                   "m_ave": 0x02, "m_ksl": 0x02, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
                   "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x39, "c_wave": 0x00,
                   "feedback": 0x0C},
-            # Tom's envelope shape reverted back to its own original
-            # character (attack/decay/sustain/release/waveform) -- reusing
-            # kick's exact envelope didn't read well in context.
-            # "Lacking punch, barely audible": TL pushed much louder
-            # (9->2) and feedback raised (1->6) for real weight.
+            # Tom's modulator (its only audible operator -- rhythm-mode
+            # channel 8 has no real carrier chaining, verified empirically:
+            # waveform has zero effect, but MULT genuinely changes pitch)
+            # replaced by a differential-evolution search against the real
+            # NES noise channel's actual LFSR output at the tom bucket's
+            # real period value (see scratchpad triangle_lab/run_tom2.py).
+            # Distance 1.289 -> 0.443 (~2.9x closer): much higher MULT
+            # (14, a real tunable oscillator parameter here) approximates
+            # noise's broadband density better than a low multiple. Cymbal
+            # (carrier) untouched -- not run through this yet.
             255: {  # channel 8: modulator = tom-tom, carrier = top cymbal
-                  "m_ave": 0x01, "m_ksl": 0x02, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
+                  "m_ave": 0x0E, "m_ksl": 0x23, "m_atdec": 0xFF, "m_susrel": 0xFB, "m_wave": 0x00,
                   "c_ave": 0x02, "c_ksl": 0x02, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
                   "feedback": 0x0C},
             # Inst 38 (N163 ch0, the low voice): user-directed swap to
