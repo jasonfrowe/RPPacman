@@ -174,16 +174,21 @@ class OPL2Translator:
               # pushes toward dense, less cleanly-tonal harmonic content,
               # compounding the same effect. VIB cleared on the modulator;
               # feedback eased from 7 to 3.
-              # Follow-up: modulator also had KSR (key-scale rate) set
-              # while the carrier didn't -- that scales the modulator's own
-              # envelope timing by pitch but leaves the carrier's alone, so
-              # the same instrument's attack/decay character subtly shifts
-              # across the octave range instead of staying consistent. Real
-              # NES pulse channels have no such pitch-dependent envelope
-              # scaling at all. Cleared to match the carrier.
-              80: {"m_ave": 0x21, "m_ksl": 0x1C, "m_atdec": 0x59, "m_susrel": 0x03, "m_wave": 0x00,
-                  "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0x59, "c_susrel": 0x07, "c_wave": 0x00,
-                  "feedback": 0x06},
+              # Replaced by a differential-evolution search against the
+              # real NES pulse channel's actual waveform (12.5% duty cycle,
+              # confirmed as the only duty value this track ever uses),
+              # matched at a real period value from this track (0x19E,
+              # ~270Hz) -- see scratchpad triangle_lab/. Found distance
+              # 0.183 vs the hand-tuned patch's 0.514 (~2.8x closer): both
+              # operators half-sine (wave=1, not sine) and max feedback --
+              # a much richer, more asymmetric harmonic series, which makes
+              # sense since a real pulse wave (unlike triangle) has strong
+              # harmonics at every multiple, not just odd ones. Verified
+              # the true fundamental peak lands on target (no octave
+              # shift) before trusting it.
+              80: {"m_ave": 0x21, "m_ksl": 0x1E, "m_atdec": 0xF9, "m_susrel": 0x08, "m_wave": 0x01,
+                  "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x08, "c_wave": 0x01,
+                  "feedback": 0x0E},
               81: {"m_ave": 0x41, "m_ksl": 0x0C, "m_atdec": 0xF2, "m_susrel": 0xFF, "m_wave": 0x00,
                   "c_ave": 0x11, "c_ksl": 0x00, "c_atdec": 0xF2, "c_susrel": 0xFF, "c_wave": 0x00,
                   "feedback": 0x02},
@@ -336,15 +341,18 @@ class OPL2Translator:
             # connection); feedback amount is the main OPL2 lever for how
             # much a sine operator buzzes/grits up via self-modulation, and
             # is the most direct thing to borrow for the grit this lost.
-            # "No upper end buzz": feedback was already at max (7) and the
-            # modulator wasn't especially quiet (TL=13), so pushed further
-            # -- modulator MULT raised 1->2 (an actual higher-harmonic
-            # generator, not just louder FM depth at the same rate) and TL
-            # dropped 13->6 for a deeper FM index. Carrier MULT left at 1
-            # so the fundamental pitch doesn't move.
-            38: {"m_ave": 0x22, "m_ksl": 0x46, "m_atdec": 0xF9, "m_susrel": 0x55, "m_wave": 0x00,
-                 "c_ave": 0x31, "c_ksl": 0x02, "c_atdec": 0xF9, "c_susrel": 0x04, "c_wave": 0x00,
-                 "feedback": 0x0E},
+            # Replaced by a differential-evolution search against the
+            # real N163 channel's *actual decoded wavetable* (arbitrary
+            # 32-sample game-authored data read directly out of N163 RAM,
+            # not a formula -- see scratchpad triangle_lab/run_n163_0.py),
+            # matched at a representative point in track 0 (~70.5Hz).
+            # Found distance 0.253 vs the hand-tuned patch's 1.178 (~4.7x
+            # closer): carrier half-sine (wave=1, not sine), high feedback.
+            # Verified the true fundamental peak lands on target with a
+            # full harmonic series (no octave shift) before trusting it.
+            38: {"m_ave": 0x21, "m_ksl": 0x1E, "m_atdec": 0xF9, "m_susrel": 0x08, "m_wave": 0x00,
+                 "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x08, "c_wave": 0x01,
+                 "feedback": 0x0C},
             # Inst 39 (n163_1): never got the same fix applied to
             # 38/80/33 earlier, since it's not audible until ~49s in and
             # so hadn't been reviewed yet. Same bug: EGT=0 (percussive --
@@ -365,14 +373,15 @@ class OPL2Translator:
             # brightness). Same fix as triangle's redesign: quiet the
             # modulator drastically (0 -> 50) for a cleaner, closer-to-sine
             # bass tone instead of a dense, unstable FM voice.
-            # Still a warble at TL=50 -- pushed further toward the
-            # near-silent-modulator approach that worked for triangle
-            # (TL=58 there); this is a low bass register so the residual
-            # modulation index at TL=50 was apparently still enough to
-            # read as unstable. TL 50->60, close to fully silent.
-            39: {"m_ave": 0x21, "m_ksl": 0x3C, "m_atdec": 0xF9, "m_susrel": 0x04, "m_wave": 0x00,
-                 "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x04, "c_wave": 0x00,
-                 "feedback": 0x00},
+            # Replaced by the same differential-evolution match as
+            # instrument 38 (n163_0): confirmed n163_1 uses the *exact
+            # same* real 32-sample N163 wavetable, just at a different
+            # frequency (66.58Hz here vs 70.55Hz for n163_0) -- same
+            # underlying voice. Distance 0.249 vs the hand-tuned patch's
+            # 1.229 (~4.9x closer) at n163_1's own frequency.
+            39: {"m_ave": 0x21, "m_ksl": 0x1E, "m_atdec": 0xF9, "m_susrel": 0x08, "m_wave": 0x00,
+                 "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x08, "c_wave": 0x01,
+                 "feedback": 0x0C},
         }
 
     OPL_CLOCK_HZ = 3579545.0
