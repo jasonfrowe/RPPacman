@@ -286,20 +286,27 @@ class OPL2Translator:
             # restored (see process_rhythm) -- so its TL is moot again;
             # left at its original pre-routing-change value.
             # Still too quiet -- another ~6dB (8 steps).
+            # "Lacking punch, barely audible": TL pushed much louder (9->2)
+            # and feedback raised (2->6) for real harmonic weight instead
+            # of a thin click. Also see rhythm_setup -- both rhythm
+            # channels' fixed pitch dropped an octave to fill out the low
+            # end.
             254: {  # channel 7: modulator = hi-hat, carrier = snare
                   # In rhythm mode HH/SD are not FM-chained -- each operator
                   # is independently audible -- so *_ksl's TL directly sets
                   # each voice's own loudness.
-                  "m_ave": 0x02, "m_ksl": 0x09, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
+                  "m_ave": 0x02, "m_ksl": 0x02, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
                   "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x39, "c_wave": 0x00,
-                  "feedback": 0x04},
+                  "feedback": 0x0C},
             # Tom's envelope shape reverted back to its own original
             # character (attack/decay/sustain/release/waveform) -- reusing
             # kick's exact envelope didn't read well in context.
+            # "Lacking punch, barely audible": TL pushed much louder
+            # (9->2) and feedback raised (1->6) for real weight.
             255: {  # channel 8: modulator = tom-tom, carrier = top cymbal
-                  "m_ave": 0x01, "m_ksl": 0x09, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
-                  "c_ave": 0x02, "c_ksl": 0x09, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
-                  "feedback": 0x02},
+                  "m_ave": 0x01, "m_ksl": 0x02, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
+                  "c_ave": 0x02, "c_ksl": 0x02, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
+                  "feedback": 0x0C},
             # Inst 38 (N163 ch0, the low voice): user-directed swap to
             # RPTracker's gm_bank[0x18] (Nylon Guitar) after further review
             # of the Harpsichord attempt. EGT (bit5 of *_ave) flipped from
@@ -525,7 +532,12 @@ class OPL2Translator:
         # -- see process_rhythm for why HH/TOM/CYM don't get a per-hit pitch.
         # BD dropped further, MIDI 36 (~65Hz) -> 30 (~46Hz) -- "shallow"
         # feedback: needed more real sub-bass weight, not just volume.
-        for phys, note in ((RHYTHM_BD_CH, 30), (RHYTHM_HHSD_CH, 84), (RHYTHM_TOMCYM_CH, 65)):
+        # HH/SD and TOM/CYM channels both dropped an octave too (84->72,
+        # 65->53) -- "lacking punch", and channel 8's own fundamental
+        # (tom) plus the noise-XOR algorithm's phase inputs (hi-hat/snare/
+        # cymbal all derive their timbre partly from channels 7/8's own
+        # pitch) both benefit from more low-end weight underneath them.
+        for phys, note in ((RHYTHM_BD_CH, 30), (RHYTHM_HHSD_CH, 72), (RHYTHM_TOMCYM_CH, 53)):
             lo, hi = self.midi_to_fnum(note)
             events.append(OPL2Event(0xA0 + phys, lo))
             events.append(OPL2Event(0xB0 + phys, hi & 0x1F))
