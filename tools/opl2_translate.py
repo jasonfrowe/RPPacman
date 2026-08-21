@@ -242,15 +242,27 @@ class OPL2Translator:
                   "feedback": 0x06},
             # Hi-hat/tom/cymbal: 17 was still too loud. Splitting the
             # difference between 17 (too loud) and 34 (too quiet) -> 25.
+            # Snare (carrier) was never targeted by process_rhythm until
+            # now (cymbal's noise bucket was reassigned to it) so it was
+            # left at TL=0 (max loud) the whole time nothing used it --
+            # brought down to match hi-hat's level now that it actually
+            # fires.
             254: {  # channel 7: modulator = hi-hat, carrier = snare
                   # In rhythm mode HH/SD are not FM-chained -- each operator
                   # is independently audible -- so *_ksl's TL directly sets
                   # each voice's own loudness.
                   "m_ave": 0x02, "m_ksl": 0x19, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
-                  "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x39, "c_wave": 0x00,
+                  "c_ave": 0x01, "c_ksl": 0x19, "c_atdec": 0xFA, "c_susrel": 0x39, "c_wave": 0x00,
                   "feedback": 0x04},
+            # Tom's modulator now reuses the kick drum's own (well-liked)
+            # envelope character exactly -- same attack/decay/sustain/
+            # release/waveform as instrument 253's modulator -- just at
+            # tom's own higher fixed pitch (rhythm_setup, MIDI 65 vs kick's
+            # 36). Cymbal (carrier) is no longer triggered by anything
+            # (its noise bucket now goes to snare instead) but its patch is
+            # left in place in case that routing changes again.
             255: {  # channel 8: modulator = tom-tom, carrier = top cymbal
-                  "m_ave": 0x01, "m_ksl": 0x19, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
+                  "m_ave": 0x01, "m_ksl": 0x16, "m_atdec": 0xF8, "m_susrel": 0x57, "m_wave": 0x00,
                   "c_ave": 0x02, "c_ksl": 0x19, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
                   "feedback": 0x02},
             # Inst 38 (N163 ch0, the low voice): user-directed swap to
@@ -418,7 +430,16 @@ class OPL2Translator:
     def volume_set(self, channel: int, volume_63: int, note: int, inst: int, source: int = -1) -> List[OPL2Event]:
         """Set TL without dropping the note; this avoids click artifacts."""
         state = self.voice_state[channel]
-        tl = self.velocity_to_opl_tl(volume_63)
+        # The caller's `vol` is always the NES chip's native 0-15 volume/
+        # envelope range (4 bits), never actually 0-63 despite the
+        # parameter name -- velocity_to_opl_tl(15) only reaches TL~21, so
+        # without rescaling here every melodic note was permanently capped
+        # ~11-12dB below OPL2's actual loudest output, regardless of any
+        # per-source trim. Rescale 0-15 -> 0-63 before the log curve; keep
+        # state.volume in the original 0-15 units since process_melodic
+        # compares it against the raw incoming `vol` to detect changes.
+        rescaled = min(63, volume_63 * 63 // 15) if volume_63 > 0 else 0
+        tl = self.velocity_to_opl_tl(rescaled)
         tl = max(0, min(63, tl + MIX_TRIM_BY_SOURCE.get(source, 0)))
         reg = 0x40 + CAR_OFFSETS[channel]
         state.volume = volume_63
@@ -475,7 +496,9 @@ class OPL2Translator:
             elif noise_note >= 55:
                 target = RYT_TOM
             else:
-                target = RYT_CYM
+                # Snare in place of cymbal: channel 7's carrier (SD) was
+                # sitting unused since nothing ever targeted it.
+                target = RYT_SD
             if target != self.prev_noise_bit:
                 bits |= target
             self.prev_noise_bit = target
