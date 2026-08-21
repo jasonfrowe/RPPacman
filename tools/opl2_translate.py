@@ -69,10 +69,11 @@ class OPL2Event:
 @dataclass
 class VoiceState:
     note: int = 0
-    volume: int = 0
+    volume: int = -1
     patch: int = 0
     active: bool = False
     fnum_hi: int = 0
+    tl: int = -1
 
 
 class OPL2Translator:
@@ -82,14 +83,14 @@ class OPL2Translator:
         # Pac-Man CE leans toward a bright, punchy arcade synth: tight lead,
         # clipped bass, and dry support voices with little extra resonance.
         self.patch_bank: Dict[int, Dict[str, int]] = {
-            80: {"m_ave": 0x21, "m_ksl": 0x15, "m_atdec": 0xF4, "m_susrel": 0x18, "m_wave": 0x03,
-                 "c_ave": 0x31, "c_ksl": 0x00, "c_atdec": 0xF4, "c_susrel": 0x18, "c_wave": 0x00,
-                 "feedback": 0x00},
-            81: {"m_ave": 0x41, "m_ksl": 0x0C, "m_atdec": 0xF2, "m_susrel": 0xFF, "m_wave": 0x00,
-                 "c_ave": 0x11, "c_ksl": 0x00, "c_atdec": 0xF2, "c_susrel": 0xFF, "c_wave": 0x00,
-                 "feedback": 0x02},
-            33: {"m_ave": 0x01, "m_ksl": 0x10, "m_atdec": 0xD6, "m_susrel": 0xF2, "m_wave": 0x00,
-                 "c_ave": 0x10, "c_ksl": 0x80, "c_atdec": 0xC6, "c_susrel": 0x8A, "c_wave": 0x00,
+              80: {"m_ave": 0x21, "m_ksl": 0x15, "m_atdec": 0xF4, "m_susrel": 0x18, "m_wave": 0x03,
+                  "c_ave": 0x31, "c_ksl": 0x00, "c_atdec": 0xF4, "c_susrel": 0x18, "c_wave": 0x00,
+                  "feedback": 0x02},
+              81: {"m_ave": 0x41, "m_ksl": 0x0C, "m_atdec": 0xF2, "m_susrel": 0xFF, "m_wave": 0x00,
+                  "c_ave": 0x11, "c_ksl": 0x00, "c_atdec": 0xF2, "c_susrel": 0xFF, "c_wave": 0x00,
+                  "feedback": 0x02},
+              33: {"m_ave": 0x01, "m_ksl": 0x10, "m_atdec": 0xD6, "m_susrel": 0xF2, "m_wave": 0x00,
+                  "c_ave": 0x10, "c_ksl": 0x80, "c_atdec": 0xC6, "c_susrel": 0x8A, "c_wave": 0x00,
                  "feedback": 0x02},
             115: {"m_ave": 0x32, "m_ksl": 0x44, "m_atdec": 0xF8, "m_susrel": 0xFF, "m_wave": 0x00,
                   "c_ave": 0x11, "c_ksl": 0x00, "c_atdec": 0xF5, "c_susrel": 0x7F, "c_wave": 0x00,
@@ -191,11 +192,13 @@ class OPL2Translator:
         state.note = 0
         return events
 
-    def volume_set(self, channel: int, volume_63: int) -> List[OPL2Event]:
+    def volume_set(self, channel: int, volume_63: int, note: int, inst: int) -> List[OPL2Event]:
         """Set TL without dropping the note; this avoids click artifacts."""
+        state = self.voice_state[channel]
         tl = self.velocity_to_opl_tl(volume_63)
         reg = 0x40 + CAR_OFFSETS[channel]
-        self.voice_state[channel].volume = volume_63
+        state.volume = volume_63
+        state.tl = tl
         ksl_bits = self.channel_ksl.get(channel, 0) & 0xC0
         return [OPL2Event(reg, ksl_bits | tl)]
 
@@ -216,7 +219,7 @@ class OPL2Translator:
         events.extend(self.patch_set(channel, drum_patch))
         if not self.voice_state[channel].active or self.voice_state[channel].note != note:
             events.extend(self.note_on(channel, note))
-        events.extend(self.volume_set(channel, volume))
+        events.extend(self.volume_set(channel, volume, note, drum_patch))
         return events
 
     def translate_track(self, rpt) -> List[OPL2Event]:
@@ -251,26 +254,26 @@ class OPL2Translator:
                             row_events.extend(self.note_off(ch))
                         continue
 
-                    if state.patch != inst:
+                    patch_changed = state.patch != inst
+                    note_changed = state.note != note
+
+                    if patch_changed:
                         if state.active:
                             row_events.extend(self.note_off(ch))
                         row_events.extend(self.patch_set(ch, inst))
                         state.patch = inst
                         self.channel_ksl[ch] = self.patch_bank.get(inst, {}).get("c_ksl", 0)
-                        if note > 0:
-                            row_events.extend(self.note_on(ch, note))
-                            state.note = note
-                            state.active = True
-                        continue
+                        state.volume = -1
+                        state.tl = -1
 
-                    if state.active and state.note != note:
+                    if state.active and note_changed:
                         row_events.extend(self.note_off(ch))
 
-                    if not state.active or state.note != note:
+                    if patch_changed or not state.active or note_changed:
                         row_events.extend(self.note_on(ch, note))
 
-                    if state.volume != vol:
-                        row_events.extend(self.volume_set(ch, vol))
+                    if patch_changed or note_changed or state.volume != vol or state.tl < 0:
+                        row_events.extend(self.volume_set(ch, vol, note, inst))
 
                 if row_events:
                     row_events[-1].delay = ticks_per_row
@@ -281,11 +284,16 @@ class OPL2Translator:
         return out
 
 
-def translate_nsf_track(nsf_path: str, track_idx: int = 0) -> List[OPL2Event]:
+def translate_nsf_track(nsf_path: str, track_idx: int = 0, loops: int = 1) -> List[OPL2Event]:
     converter = NSFConverter(nsf_path)
     rpt = converter.convert_track(track_idx)
     translator = OPL2Translator()
-    return translator.translate_track(rpt)
+    events: List[OPL2Event] = []
+    for _ in range(max(1, loops)):
+        translator.voice_state = {i: VoiceState() for i in range(9)}
+        translator.channel_ksl = {i: 0 for i in range(9)}
+        events.extend(translator.translate_track(rpt))
+    return events
 
 
 def export_all_tracks(nsf_path: str, output_dir: str) -> List[str]:
@@ -322,6 +330,7 @@ def main() -> None:
     parser.add_argument("--all", action="store_true", help="Export all tracks to JSON event files")
     parser.add_argument("--out-dir", default="music/generated", help="Output directory for translated event files")
     parser.add_argument("--bin-out", default=None, help="Optional path for a generated RP6502 music binary (.BIN) file")
+    parser.add_argument("--loops", type=int, default=1, help="How many times to render the imported track before the loop marker")
     parser.add_argument("--limit", type=int, default=20, help="How many events to print for the selected track")
     args = parser.parse_args()
 
@@ -338,7 +347,7 @@ def main() -> None:
     print(f"Title: {converter.title}")
     print(f"Tracks: {converter.total_songs}")
 
-    events = translate_nsf_track(args.nsf, args.track)
+    events = translate_nsf_track(args.nsf, args.track, loops=args.loops)
     print(f"Track {args.track} event count: {len(events)}")
     if args.bin_out:
         size = serialize_events_to_bin(events, args.bin_out)

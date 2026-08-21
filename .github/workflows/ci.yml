@@ -7,6 +7,8 @@ on:
 jobs:
   rom:
     runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
 
@@ -17,16 +19,14 @@ jobs:
             cmake ninja-build python3 \
             libgl1 libx11-6 libxi6 libxcursor1 libasound2t64
 
-      - name: Cache the emulator
-        id: emu
-        uses: actions/cache@v4
-        with:
-          path: tools/rp6502-emu
-          key: rp6502-emu-${{ runner.os }}-${{ hashFiles('tools/rp6502.cmake') }}
-
-      - name: Fetch the emulator
-        if: steps.emu.outputs.cache-hit != 'true'
-        run: cmake -P tools/rp6502.cmake
+      - name: Fetch Linux emulator artifact
+        run: |
+          rm -rf .ci-rp6502-artifacts
+          mkdir -p .ci-rp6502-artifacts
+          gh api repos/picocomputer/rp6502/actions/artifacts/9388955581/zip > .ci-rp6502-artifacts/rp6502-linux-x86_64.tar.gz
+          tar -xzf .ci-rp6502-artifacts/rp6502-linux-x86_64.tar.gz -C .ci-rp6502-artifacts
+          test -f .ci-rp6502-artifacts/rp6502-emu
+          install -m 755 .ci-rp6502-artifacts/rp6502-emu tools/rp6502-emu
 
       - name: Setup LLVM-MOS SDK
         uses: llvm-mos/setup-llvm-mos-sdk@v1
