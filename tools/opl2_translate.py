@@ -225,19 +225,31 @@ class OPL2Translator:
               # 2 (an octave-up partial) at a moderate-quiet TL for a
               # little arcade sparkle without destabilizing the
               # fundamental.
-              # Replaced by a differential-evolution search against the
-              # real NES triangle's harmonic-amplitude signature (odd
-              # harmonics, ~1/n^2 falloff), matched at a real period value
-              # from this track (0x30, ~1141Hz) -- see
-              # scratchpad triangle_lab/optimize.py. Found distance 0.035
-              # vs the hand-tuned patch's 0.068 (roughly 2x closer). Back
-              # to FM connection (not additive) with carrier waveform 2
-              # (abs-sine) -- verified this doesn't shift perceived pitch
-              # (true fundamental peak lands exactly on target, 3rd
-              # harmonic next strongest, not 2nd) before trusting it.
-              33: {"m_ave": 0x22, "m_ksl": 0x34, "m_atdec": 0xF9, "m_susrel": 0x08, "m_wave": 0x00,
-                  "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x08, "c_wave": 0x02,
-                 "feedback": 0x0E},
+              # A differential-evolution search against the real NES
+              # triangle's harmonic-amplitude signature found a patch
+              # ~2x closer (carrier waveform 2/abs-sine, FM connection,
+              # feedback 7) that measured as pitch-correct in every
+              # emu8950-rendered WAV this session -- "true fundamental
+              # peak lands exactly on target, 3rd harmonic next, not
+              # 2nd". On real hardware it played a genuine octave up.
+              # Root cause, confirmed by reading the actual FPGA core
+              # (vendor/opl2_fpga/fpga/modules/operator/src/
+              # phase_generator.sv): waveform 2's phase folding (theta
+              # computed the same as waveform 0) combined with its sign
+              # *never* being flipped (neg_p5 only applies when ws==0)
+              # makes the same positive-going hump repeat twice per
+              # phase-accumulator cycle instead of once -- a real
+              # frequency doubling on actual silicon that emu8950
+              # evidently does not reproduce. Every "verified no octave
+              # shift" claim made this session was checked against
+              # emu8950 only, which has this blind spot for waveforms
+              # 2/3 -- reverted to the pre-DE "fuzz" patch, which never
+              # used those waveforms and was independently approved by
+              # ear (odd-harmonic MULT=3 overtone, additive connection,
+              # sine on both operators).
+              33: {"m_ave": 0x23, "m_ksl": 0x20, "m_atdec": 0xF9, "m_susrel": 0x0F, "m_wave": 0x00,
+                  "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x08, "c_wave": 0x00,
+                 "feedback": 0x05},
             115: {"m_ave": 0x32, "m_ksl": 0x44, "m_atdec": 0xF8, "m_susrel": 0xFF, "m_wave": 0x00,
                   "c_ave": 0x11, "c_ksl": 0x00, "c_atdec": 0xF5, "c_susrel": 0x7F, "c_wave": 0x00,
                   "feedback": 0x04},
