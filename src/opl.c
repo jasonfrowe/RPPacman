@@ -286,7 +286,15 @@ void update_music_advance(uint8_t ticks) {
     }
 
     if (music_wait_ticks == 0) {
-        uint16_t budget = (uint16_t)MUSIC_EVENTS_PER_FRAME_BUDGET * (uint16_t)ticks;
+        // Budget must scale with effective_ticks (the real number of .BIN
+        // ticks being advanced this call), not the raw vsync-frame delta --
+        // with a 4x tempo scale, 4 ticks' worth of events can legitimately
+        // need processing in a single call. Using raw `ticks` here (always
+        // 1) capped this at MUSIC_EVENTS_PER_FRAME_BUDGET regardless of
+        // tempo scale, causing a real, audible stall on any burst denser
+        // than that -- confirmed by scanning music/PacManCE_01.BIN: one
+        // burst of 68 zero-delay events, just over the old effective cap.
+        uint16_t budget = (uint16_t)MUSIC_EVENTS_PER_FRAME_BUDGET * effective_ticks;
         if (budget == 0u) budget = MUSIC_EVENTS_PER_FRAME_BUDGET;
         if (budget > 255u) budget = 255u;
 
