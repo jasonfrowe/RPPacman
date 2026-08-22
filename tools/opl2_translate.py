@@ -278,19 +278,20 @@ class OPL2Translator:
             # slowed (rate 8->3, lower rate = slower/longer decay) and
             # given a modest sustain level (0->3) for an actual "thump...
             # boom" tail instead of a short click.
-            # Replaced by a differential-evolution search against the
-            # *actual decoded DMC sample* (delta-modulated PCM, decoded
-            # directly from the NSF ROM data at $C000, rate index 0x0D --
-            # see scratchpad triangle_lab/run_kick.py). A one-shot
-            # transient has no stable fundamental, so this used an
-            # octave-band spectral envelope instead of the harmonic-
-            # amplitude vector used for the tonal voices. Distance
-            # 0.564 -> 0.0405 (~14x closer): additive connection, half-
-            # sine modulator, abs-sine carrier.
+            # A differential-evolution search against the *actual decoded
+            # DMC sample* (delta-modulated PCM, decoded directly from the
+            # NSF ROM data at $C000 -- see scratchpad triangle_lab/
+            # run_kick.py) found a patch ~14x closer by octave-band
+            # spectral-envelope distance (a one-shot transient has no
+            # stable fundamental, so this used spectral envelope rather
+            # than harmonic amplitude). But it read as "too clean" in
+            # context, same as n163_0/1 -- reverted to this hand-tuned
+            # patch by request; the DE result is preserved in git history
+            # (commit bba7415) and in Plan.md if worth revisiting.
             253: {  # bass drum (channel 6, both operators)
-                  "m_ave": 0x02, "m_ksl": 0x2A, "m_atdec": 0xF9, "m_susrel": 0x50, "m_wave": 0x01,
-                  "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x3E, "c_wave": 0x02,
-                  "feedback": 0x09},
+                  "m_ave": 0x01, "m_ksl": 0x06, "m_atdec": 0xF8, "m_susrel": 0x57, "m_wave": 0x00,
+                  "c_ave": 0x01, "c_ksl": 0x02, "c_atdec": 0xFA, "c_susrel": 0x33, "c_wave": 0x00,
+                  "feedback": 0x0C},
             # Same story as kick: TL=25 was tuned before the melodic
             # volume-rescale fix raised sq1/tri/n163_0/n163_1 by ~6dB, and
             # rhythm voices don't go through that rescale -- eased ~6dB
@@ -313,16 +314,14 @@ class OPL2Translator:
                   "feedback": 0x0C},
             # Tom's modulator (its only audible operator -- rhythm-mode
             # channel 8 has no real carrier chaining, verified empirically:
-            # waveform has zero effect, but MULT genuinely changes pitch)
-            # replaced by a differential-evolution search against the real
-            # NES noise channel's actual LFSR output at the tom bucket's
-            # real period value (see scratchpad triangle_lab/run_tom2.py).
-            # Distance 1.289 -> 0.443 (~2.9x closer): much higher MULT
-            # (14, a real tunable oscillator parameter here) approximates
-            # noise's broadband density better than a low multiple. Cymbal
-            # (carrier) untouched -- not run through this yet.
+            # waveform has zero effect, but MULT genuinely changes pitch) was
+            # matched via differential evolution against the real NES noise
+            # channel's actual LFSR output at the tom bucket's real period
+            # value (see scratchpad triangle_lab/run_tom2.py, ~2.9x closer
+            # by spectral-envelope distance, commit bba7415) but reverted
+            # alongside kick/n163 for the same "too clean" reason.
             255: {  # channel 8: modulator = tom-tom, carrier = top cymbal
-                  "m_ave": 0x0E, "m_ksl": 0x23, "m_atdec": 0xFF, "m_susrel": 0xFB, "m_wave": 0x00,
+                  "m_ave": 0x01, "m_ksl": 0x02, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
                   "c_ave": 0x02, "c_ksl": 0x02, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
                   "feedback": 0x0C},
             # Inst 38 (N163 ch0, the low voice): user-directed swap to
@@ -355,31 +354,19 @@ class OPL2Translator:
             # connection); feedback amount is the main OPL2 lever for how
             # much a sine operator buzzes/grits up via self-modulation, and
             # is the most direct thing to borrow for the grit this lost.
-            # Replaced by a differential-evolution search against the
-            # real N163 channel's *actual decoded wavetable* (arbitrary
-            # 32-sample game-authored data read directly out of N163 RAM,
-            # not a formula -- see scratchpad triangle_lab/run_n163_0.py),
-            # matched at a representative point in track 0 (~70.5Hz).
-            # Found distance 0.253 vs the hand-tuned patch's 1.178 (~4.7x
-            # closer): carrier half-sine (wave=1, not sine), high feedback.
-            # Verified the true fundamental peak lands on target with a
-            # full harmonic series (no octave shift) before trusting it.
-            # User feedback after living with it: reads as "too clean" /
-            # less interesting than before. Re-ran the match at a
-            # realistic ~0.11s note duration (this voice's real note
-            # length is a fast arpeggio, not a sustained tone) including
-            # the attack transient instead of skipping it -- converged on
-            # the same distance (0.257) as this patch across two different
-            # seeds/budgets, so this already sits at (or very near) this
-            # objective's optimum; nothing better was found. Possible
-            # fallback if this still doesn't satisfy: the pre-optimization
-            # hand-tuned patch --
-            #   38: {"m_ave": 0x22, "m_ksl": 0x46, "m_atdec": 0xF9, "m_susrel": 0x55, "m_wave": 0x00,
-            #        "c_ave": 0x31, "c_ksl": 0x02, "c_atdec": 0xF9, "c_susrel": 0x04, "c_wave": 0x00,
-            #        "feedback": 0x0E},
-            38: {"m_ave": 0x21, "m_ksl": 0x1E, "m_atdec": 0xF9, "m_susrel": 0x08, "m_wave": 0x00,
-                 "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x08, "c_wave": 0x01,
-                 "feedback": 0x0C},
+            # A differential-evolution search against the real N163
+            # channel's *actual decoded wavetable* (read directly out of
+            # N163 RAM, not a formula -- see scratchpad triangle_lab/
+            # run_n163_0.py) found a patch ~4.7x closer by harmonic-
+            # amplitude distance than this one (verified correct pitch,
+            # even re-matching at a realistic ~0.11s note duration
+            # including the attack). But it read as "too clean" in
+            # context -- reverted to this hand-tuned patch by request; the
+            # DE result is preserved in git history (commit ccd86ac) and
+            # in Plan.md if worth revisiting.
+            38: {"m_ave": 0x22, "m_ksl": 0x46, "m_atdec": 0xF9, "m_susrel": 0x55, "m_wave": 0x00,
+                 "c_ave": 0x31, "c_ksl": 0x02, "c_atdec": 0xF9, "c_susrel": 0x04, "c_wave": 0x00,
+                 "feedback": 0x0E},
             # Inst 39 (n163_1): never got the same fix applied to
             # 38/80/33 earlier, since it's not audible until ~49s in and
             # so hadn't been reviewed yet. Same bug: EGT=0 (percussive --
@@ -400,15 +387,15 @@ class OPL2Translator:
             # brightness). Same fix as triangle's redesign: quiet the
             # modulator drastically (0 -> 50) for a cleaner, closer-to-sine
             # bass tone instead of a dense, unstable FM voice.
-            # Replaced by the same differential-evolution match as
-            # instrument 38 (n163_0): confirmed n163_1 uses the *exact
-            # same* real 32-sample N163 wavetable, just at a different
-            # frequency (66.58Hz here vs 70.55Hz for n163_0) -- same
-            # underlying voice. Distance 0.249 vs the hand-tuned patch's
-            # 1.229 (~4.9x closer) at n163_1's own frequency.
-            39: {"m_ave": 0x21, "m_ksl": 0x1E, "m_atdec": 0xF9, "m_susrel": 0x08, "m_wave": 0x00,
-                 "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x08, "c_wave": 0x01,
-                 "feedback": 0x0C},
+            # Confirmed n163_1 uses the *exact same* real 32-sample N163
+            # wavetable as n163_0, just at a different frequency (66.58Hz
+            # vs 70.55Hz) -- the same differential-evolution match applied
+            # here too (commit ccd86ac, ~4.9x closer by harmonic-amplitude
+            # distance), but reverted alongside n163_0 for the same "too
+            # clean" reason.
+            39: {"m_ave": 0x21, "m_ksl": 0x3C, "m_atdec": 0xF9, "m_susrel": 0x04, "m_wave": 0x00,
+                 "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x04, "c_wave": 0x00,
+                 "feedback": 0x00},
         }
 
     OPL_CLOCK_HZ = 3579545.0
