@@ -532,11 +532,6 @@ int main(void)
             }
         }
 
-        // 4. SYNC (Wait for VSYNC)
-        while (RIA.vsync == vsync_last) {
-            // Do nothing, just wait
-        }
-
         uint8_t now_vsync = RIA.vsync;
         uint8_t music_ticks = (uint8_t)(now_vsync - s_music_vsync_last);
         if (music_ticks == 0u) {
@@ -547,6 +542,11 @@ int main(void)
 
         // Advance OPL2 music sequencer
         update_music_advance(music_ticks);
+
+        // 4. SYNC (Wait for VSYNC)
+        while (RIA.vsync == vsync_last) {
+            // Do nothing, just wait
+        }
 
         frame++;
         if (frame >= 60) frame = 0;
