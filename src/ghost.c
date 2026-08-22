@@ -383,9 +383,12 @@ static void compute_ghost_target_tile(int ghost_index, int16_t *target_tx, int16
                 int16_t clyde_tx = (int16_t)((ghosts[3].world_px + (MAZE_TILES_SIZE_PX / 2)) / MAZE_TILES_SIZE_PX);
                 int16_t clyde_ty = (int16_t)((ghosts[3].world_py + (MAZE_TILES_SIZE_PX / 2)) / MAZE_TILES_SIZE_PX);
 
-                int32_t dx = (int32_t)(clyde_tx - pac_tx);
-                int32_t dy = (int32_t)(clyde_ty - pac_ty);
-                int32_t dist_sq = (dx * dx) + (dy * dy);
+                // Tile-coordinate deltas here are bounded well within
+                // int16_t (maze is 46x29 tiles), so this avoids a real
+                // 32-bit multiply the 6502 has no hardware support for.
+                int16_t dx = clyde_tx - pac_tx;
+                int16_t dy = clyde_ty - pac_ty;
+                int16_t dist_sq = (dx * dx) + (dy * dy);
 
                 if (dist_sq > (8 * 8)) {
                     *target_tx = pac_tx;
@@ -507,7 +510,7 @@ static void update_ghost_outside_movement(int ghost_index) {
 
             int8_t opposite_dir = get_opposite_dir(g->dir);
             int8_t best_dir = DIR_NONE;
-            int32_t min_dist_sq = 0x7FFFFFFF;
+            int16_t min_dist_sq = 0x7FFF;
 
             // Strict Arcade Direction Priority Order: UP, LEFT, DOWN, RIGHT
             static const int8_t EVAL_DIRS[4] = { DIR_UP, DIR_LEFT, DIR_DOWN, DIR_RIGHT };
@@ -531,9 +534,12 @@ static void update_ghost_outside_movement(int ghost_index) {
                     int16_t next_tx = cur_tx + t_dx;
                     int16_t next_ty = cur_ty + t_dy;
 
-                    int32_t diff_x = (int32_t)(next_tx - target_tx);
-                    int32_t diff_y = (int32_t)(next_ty - target_ty);
-                    int32_t dist_sq = (diff_x * diff_x) + (diff_y * diff_y);
+                    // Same bound as the Clyde check above -- safe in
+                    // int16_t, and this runs for every ghost at every
+                    // intersection, so it's the hottest of these.
+                    int16_t diff_x = next_tx - target_tx;
+                    int16_t diff_y = next_ty - target_ty;
+                    int16_t dist_sq = (diff_x * diff_x) + (diff_y * diff_y);
 
                     if (dist_sq < min_dist_sq) {
                         min_dist_sq = dist_sq;
@@ -708,7 +714,10 @@ void ghost_update_motion(void) {
             // Amplitudes: Bounce 1: 24px, Bounce 2: 12px, Bounce 3: 4px
             int16_t max_amp = (cycle == 0) ? 24 : ((cycle == 1) ? 12 : 4);
             // Parabola: r = max_amp * sin(sub * pi / 32) approximated via quadratic parabola 4*x*(32-x)/1024
-            int32_t height = (4 * (int32_t)sub * (32 - (int32_t)sub) * max_amp) / 1024;
+            // 4*sub*(32-sub) peaks at 1024 (sub=16), times max_amp (<=24)
+            // is at most 24576 -- safely within int16_t, avoiding a real
+            // 32-bit multiply for this every frame during the bounce.
+            int16_t height = (4 * (int16_t)sub * (32 - (int16_t)sub) * max_amp) / 1024;
 
             // 6 radial directions equally spaced by 60 degrees (0, 60, 120, 180, 240, 300 deg)
             // cos/sin ratios scaled by 256:
@@ -986,8 +995,8 @@ void ghost_update_motion(void) {
                 }
 
                 // Tile 23 exit: test stepping left to tile 22 vs stepping right to tile 24
-                int32_t diff_left = (int32_t)(22 - target_tx);
-                int32_t diff_right = (int32_t)(24 - target_tx);
+                int16_t diff_left = 22 - target_tx;
+                int16_t diff_right = 24 - target_tx;
 
                 g->dir = (diff_left * diff_left <= diff_right * diff_right) ? DIR_LEFT : DIR_RIGHT;
             }

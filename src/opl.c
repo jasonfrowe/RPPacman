@@ -273,9 +273,19 @@ void update_music_advance(uint8_t ticks) {
 
     uint16_t effective_ticks = ticks;
     if (s_music_tempo_scale != 256) {
-        s_tempo_acc += (uint16_t)ticks * s_music_tempo_scale;
-        effective_ticks = s_tempo_acc >> 8;
-        s_tempo_acc &= 0x00FF;
+        if (s_music_tempo_scale == 1024) {
+            // Common case (the current, and currently only, tempo
+            // scale in use): an exact multiple of 256, so a shift
+            // stands in for the general fixed-point multiply below --
+            // the 6502 has no hardware multiplier, so a real 16x16
+            // multiply here would mean a genuine subroutine call every
+            // single frame for no benefit over `<< 2`.
+            effective_ticks = (uint16_t)ticks << 2;
+        } else {
+            s_tempo_acc += (uint16_t)ticks * s_music_tempo_scale;
+            effective_ticks = s_tempo_acc >> 8;
+            s_tempo_acc &= 0x00FF;
+        }
         if (effective_ticks == 0) return;
     }
 
