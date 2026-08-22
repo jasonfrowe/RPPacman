@@ -342,6 +342,29 @@ Drums (kick, hi-hat/tom/cymbal) intentionally not run through this
 harness yet -- they need a different reference approach (DMC sample
 decode, noise-vs-noise matching) rather than tone matching.
 
+### 2026-08-21: drums matched too, then all four DE matches reverted
+
+Extended the harness to the percussion voices. Kick matched against the
+*actual decoded DMC sample* (delta-modulated PCM, decoded directly from
+the NSF ROM data at $C000) using an octave-band spectral envelope
+instead of a harmonic-amplitude vector, since a one-shot transient has
+no stable fundamental -- 0.564->0.0405 (~14x closer), the biggest win of
+the exercise. Tom needed its own smaller search: empirically confirmed
+rhythm-mode channel 8's modulator has no real carrier chaining and its
+waveform has zero effect on output, but MULT genuinely changes pitch, so
+matched only MULT/TL/envelope against the real NES noise channel's
+actual LFSR output at the tom bucket's real period value -- 1.289->0.443
+(~2.9x closer). Hi-hat/snare/cymbal confirmed NOT reachable this way at
+all (waveform/MULT have zero effect on their hardware-noise-XOR output),
+so only the already-completed by-ear TL/envelope tuning applies there.
+
+Verdict after listening in context: kick and tom, like n163_0/1, read as
+"too clean" -- reverted all four (kick/tom/n163_0/n163_1) to their
+pre-optimization hand-tuned patches. Triangle and sq1 kept their DE
+matches (no such complaint). All four DE results remain in git history
+(commits ccd86ac, bba7415) and above if worth revisiting -- the harness
+itself (scratchpad `triangle_lab/`) is reusable for any future patch.
+
 ## Git discipline
 
 - Keep this branch as the work-tracking branch.
