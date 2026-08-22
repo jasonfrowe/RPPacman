@@ -204,7 +204,7 @@ static bool music_refill_buffer(void) {
     return true;
 }
 
-static uint16_t s_music_tempo_scale = 256; // 256 = 1.0x (default tempo speed)
+static uint16_t s_music_tempo_scale = 1024; // 256 = 1.0x; all current music .BIN assets run at quarter-frame (~240Hz) resolution, 4x the native tick rate, so 1024 (4.0x) is the real default
 static uint16_t s_tempo_acc = 0;
 
 void music_set_tempo_scale(uint16_t scale_256) {
@@ -221,7 +221,7 @@ void music_init(const char* filename) {
     music_just_looped = false;
     music_paused = false;
     music_error_state = (music_fd < 0);
-    s_music_tempo_scale = 256; // Default to 1.0x speed
+    s_music_tempo_scale = 1024; // Default to 4.0x -- see declaration above
     s_tempo_acc = 0;
 
     // Re-initialize OPL registers to clear lingering patches and key-on states from previous songs
@@ -247,7 +247,7 @@ void music_stop(void) {
     music_just_looped = false;
     music_error_state = false;
     music_paused = false;
-    s_music_tempo_scale = 256;
+    s_music_tempo_scale = 1024;
     s_tempo_acc = 0;
     opl_init();
 }

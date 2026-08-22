@@ -415,9 +415,8 @@ int main(void)
                     if (s_title_timer < 20) {
                         s_title_timer++;
                     } else {
-                        // Play PACMAN01.BIN intro theme scaled to 0.8x default speed
+                        // Play PACMAN01.BIN intro theme
                         music_init("ROM:pacman01");
-                        music_set_tempo_scale(205); // 205 / 256 = 0.8x speed
                         s_title_substate = TITLE_SUBSTATE_GAME_START_INTRO_MUSIC;
                         s_title_timer = 0;
                     }
@@ -443,16 +442,9 @@ int main(void)
                         set_game_motion_started(true);
 
                         // Start playing gameplay music (PACMAN03.BIN, now
-                        // remapped in CMakeLists.txt to PacManCE_01.BIN --
-                        // that stream runs at quarter-frame/~240Hz tick
-                        // resolution (4 ticks per real 60Hz vsync frame),
-                        // 4x denser than pacman01/02's native tick rate,
-                        // so it alone needs the tempo scaled up 4x here
-                        // rather than scaling every track's vsync-driven
-                        // tick rate globally.
+                        // remapped in CMakeLists.txt to PacManCE_01.BIN)
                         s_game_bgm_playing = true;
                         music_init("ROM:pacman03");
-                        music_set_tempo_scale(1024); // 1024 / 256 = 4.0x
                     }
                     break;
                 }
@@ -525,12 +517,10 @@ int main(void)
             update_game_timer_display();
 
             // Start playing gameplay music (PACMAN03.BIN, remapped to
-            // PacManCE_01.BIN -- see the other pacman03 load site for why
-            // the tempo scale is needed here) once Pac-Man begins to move
+            // PacManCE_01.BIN) once Pac-Man begins to move
             if (!s_game_bgm_playing && is_game_motion_started()) {
                 s_game_bgm_playing = true;
                 music_init("ROM:pacman03");
-                music_set_tempo_scale(1024); // 1024 / 256 = 4.0x
             }
 
             if (is_game_timer_expired()) {
