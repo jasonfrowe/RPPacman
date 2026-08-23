@@ -87,6 +87,7 @@ void start_pacman_death_sequence(void) {
         s_ghosts_eaten_chain = 0;   // Reset scared ghost combo chain on death
         s_frightened_timer = 0;     // Cancel active frightened power pellet state on death
         sfx_set_ambient("ROM:sfxnormal"); // Match: frightened may have been active
+        set_frightened_palette(false);
         reset_player_on_death();    // Reset Pac-Dots eaten multiplier tier back to 10 points (0-59 dots)
         clear_all_active_score_popups(); // Remove any ghost or prize score popups off-screen
         sfx_play("ROM:sfxdeath");
@@ -267,6 +268,7 @@ void trigger_power_pellet_frightened(void) {
     s_frightened_timer = s_frightened_max_duration;
     // NOTE: s_ghosts_eaten_chain is NOT reset here! Combo chain continues across pellets until timer expires.
     sfx_set_ambient("ROM:sfxfrightened");
+    set_frightened_palette(true);
 
     for (int i = 0; i < NGHOSTS; i++) {
         ghost_struct *g = &ghosts[i];
@@ -946,6 +948,7 @@ void ghost_update_motion(void) {
         if (s_frightened_timer == 0) {
             s_ghosts_eaten_chain = 0;
             sfx_set_ambient("ROM:sfxnormal");
+            set_frightened_palette(false);
             for (int i = 0; i < NGHOSTS; i++) {
                 if (ghosts[i].mode == GHOST_MODE_FRIGHTENED) {
                     ghosts[i].mode = GHOST_MODE_CHASE;

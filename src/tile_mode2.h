@@ -73,6 +73,7 @@ extern int8_t maze_d1; // Change in maze_dx for this frame, used to adjust ghost
 void write_text_to_text_map(uint8_t tx, uint8_t ty, const char *str);
 void set_maze_palette_black(void);
 void restore_maze_palette(void);
+void set_frightened_palette(bool active);
 void set_title_palette_black(void);
 void restore_title_palette(void);
 void set_title_palette_scaled(uint8_t num, uint8_t den, bool white_boost, uint8_t white_step, bool cold_start);

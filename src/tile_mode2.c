@@ -4,6 +4,7 @@
 #include "tile_mode2.h"
 #include "constants.h"
 #include "ghost.h"
+#include "opl.h"
 
 unsigned MAZE_CONFIG;
 unsigned TEXT_MAP_CONFIG;
@@ -157,6 +158,8 @@ void write_text_to_text_map(uint8_t tx, uint8_t ty, const char *str) {
 }
 
 static bool s_maze_palette_black = false;
+static uint16_t s_index6_color = 0; // set by restore_maze_palette()/set_frightened_palette()
+static uint8_t s_kick_flash_timer = 0; // frames remaining for the kick-drum beat flash (index 11)
 
 void set_maze_palette_black(void) {
     s_maze_palette_black = true;
@@ -176,6 +179,30 @@ void restore_maze_palette(void) {
         RIA.rw0 = maze_palette[i] & 0xFF;
         RIA.rw0 = maze_palette[i] >> 8;
     }
+    s_index6_color = maze_palette[6];
+}
+
+// Swaps the maze-outline colors (indices 6 and 8) to the frightened
+// targets (indices 2 and 3) while ghosts are vulnerable, or back to
+// their normal values otherwise. s_index6_color tracks whichever of
+// those index 6 currently holds, since maze_palette[] itself is a
+// compile-time constant and can't reflect this swap -- the kick-drum
+// beat flash (index 11) mirrors whatever index 6 currently is, frightened
+// or not.
+void set_frightened_palette(bool active) {
+    uint16_t c6 = active ? maze_palette[2] : maze_palette[6];
+    uint16_t c8 = active ? maze_palette[3] : maze_palette[8];
+
+    RIA.addr0 = MAZE_PALETTE_ADDR + (6 * 2);
+    RIA.step0 = 1;
+    RIA.rw0 = c6 & 0xFF;
+    RIA.rw0 = c6 >> 8;
+    s_index6_color = c6;
+
+    RIA.addr0 = MAZE_PALETTE_ADDR + (8 * 2);
+    RIA.step0 = 1;
+    RIA.rw0 = c8 & 0xFF;
+    RIA.rw0 = c8 >> 8;
 }
 
 void set_title_palette_black(void) {
@@ -291,6 +318,24 @@ void tile_mode2_palette_update(uint8_t frame){
     // Write the chosen color
     RIA.rw0 = maze_palette[color_index] & 0xFF; // Low byte of the color
     RIA.rw0 = maze_palette[color_index] >> 8;   // High byte of the color
+
+    // Kick-drum beat flash (index 11): mirrors whatever index 6 currently
+    // holds (normal or frightened, via s_index6_color) for 8 frames after
+    // each real kick hit, black otherwise.
+    if (opl_consume_kick_hit()) {
+        s_kick_flash_timer = 8;
+    }
+    uint16_t c11;
+    if (s_kick_flash_timer > 0) {
+        s_kick_flash_timer--;
+        c11 = s_index6_color;
+    } else {
+        c11 = 0x0020;
+    }
+    RIA.addr0 = MAZE_PALETTE_ADDR + (11 * 2);
+    RIA.step0 = 1;
+    RIA.rw0 = c11 & 0xFF;
+    RIA.rw0 = c11 >> 8;
 }
 
 void update_player_score_display(uint32_t score) {

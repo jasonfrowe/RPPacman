@@ -270,6 +270,37 @@ static void player_stop(music_player_t *p) {
     p->tempo_acc = 0;
 }
 
+// Kick-drum beat detection for the palette-flash effect (tile_mode2.c).
+// Register 0xBD's bit 4 is the rhythm-mode bass-drum key-on flag; only
+// the gameplay music's own .BIN stream ever writes 0xBD at all (SFX
+// tracks skip rhythm_setup() entirely, and nothing else writes raw
+// register bytes through this path), so hooking it here needs no extra
+// bookkeeping about which player is calling. A real kick is a 0->1
+// transition on that bit specifically -- the translator always writes a
+// bit-clearing "off" value immediately before the "on" value when
+// forcing a fresh retrigger (see opl2_translate.py's process_rhythm),
+// but once set, bit 4 otherwise stays set across unrelated hi-hat/snare/
+// tom/cymbal retriggers until the next real kick, so testing "is the bit
+// set" alone would fire on every one of those too.
+#define RYT_BD_BIT 0x10
+static uint8_t s_prev_rhythm_reg = 0x00;
+static bool s_kick_hit_pending = false;
+
+static void track_kick_hit(uint8_t reg, uint8_t val) {
+    if (reg != 0xBD) return;
+    if ((val & RYT_BD_BIT) && !(s_prev_rhythm_reg & RYT_BD_BIT)) {
+        s_kick_hit_pending = true;
+    }
+    s_prev_rhythm_reg = val;
+}
+
+// Consumes (clears) the pending kick-hit flag. Call once per frame.
+bool opl_consume_kick_hit(void) {
+    bool hit = s_kick_hit_pending;
+    s_kick_hit_pending = false;
+    return hit;
+}
+
 static void player_advance(music_player_t *p, uint8_t ticks, uint8_t min_ch, uint8_t max_ch) {
     if (p->paused || p->error_state || p->fd < 0 || p->ended) return;
     if (ticks == 0u) ticks = 1u;
@@ -368,6 +399,7 @@ static void player_advance(music_player_t *p, uint8_t ticks, uint8_t min_ch, uin
             } else {
                 if (player_reg_allowed(reg, min_ch, max_ch)) {
                     opl_write(reg, val);
+                    track_kick_hit(reg, val);
                 }
             }
 

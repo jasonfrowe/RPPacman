@@ -45,6 +45,11 @@ extern void sfx_set_ambient(const char* filename);
 extern void sfx_play(const char* filename);
 extern void sfx_stop(void);
 extern void update_sfx_advance(uint8_t ticks);
+
+// Returns true once for each real kick-drum hit (rhythm register 0xBD's
+// bass-drum bit going 0->1) written by the gameplay music since the last
+// call, then clears the flag -- call exactly once per frame.
+extern bool opl_consume_kick_hit(void);
 extern void OPL_SetPatch(uint8_t channel, const OPL_Patch* patch);
 extern void shutdown_audio(void);
 
