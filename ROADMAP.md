@@ -56,11 +56,18 @@ Needs extra maps built first (blocked on map/asset work, not audio).
 Built via option (a): `opl_consume_kick_hit()` in `src/opl.c` flags a
 rising edge on rhythm register `0xBD`'s bass-drum bit, consumed once per
 frame by `tile_mode2_palette_update()`. Palette index 11 mirrors index 6's
-current color for 8 frames after each real kick, otherwise black. Also
-added, same session: a frightened-mode swap (`set_frightened_palette()` in
-`src/tile_mode2.c`) where index 6 -> index 2's color and index 8 -> index
-3's color while ghosts are vulnerable, reverting on expiry or Pac-Man
-death (wired from `src/ghost.c`).
+current color for 8 frames after each real kick, otherwise black.
+
+Also built, same session: a frightened-mode outline-color cycle. Palette
+indices 6/8 step through an 8-stage color sequence
+(`FRIGHTENED_PALETTE_STAGES` in `src/tile_mode2.c`, written by
+`set_frightened_palette_stage()`) while ghosts are vulnerable, reverting
+to normal on expiry or Pac-Man death. `src/ghost.c` paces the 8 stages
+evenly across whatever frightened duration is active for the current
+level (`FRIGHTENED_DURATION_TABLE`, 600 down to 240 frames) via a plain
+`duration >> 3` shift, so the cycle runs faster on later, shorter
+levels -- matching the pacing of the ghosts' own sprite flash-rate
+speedup.
 
 ### v. Game-over -> Results transition
 
