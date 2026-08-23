@@ -365,6 +365,63 @@ matches (no such complaint). All four DE results remain in git history
 (commits ccd86ac, bba7415) and above if worth revisiting -- the harness
 itself (scratchpad `triangle_lab/`) is reusable for any future patch.
 
+### 2026-08-22/23: vsync/audio loop fix, triangle staccato bridging, channel-mapping simplification, N163 census
+
+Root-caused the ~64s audible slowdown in track 0's gameplay music, previously
+suspected to be a 6502-side stall. Ruled out with hard evidence, in order:
+the `.BIN`'s own event budget (max 68-event burst, nowhere near the 256/call
+cap), the FPGA OPL2 register-write interface's documented timing margin (4
+clocks needed vs 6.3 available at max 6502 write rate), and the 6502 game
+loop itself (100+s of *verified* real gameplay -- unlimited lives, screenshot-
+confirmed still in the maze, real synth running, no `--mute` -- through the
+CI-built `rp6502-emu`, zero vsync misses). Root cause was real, correctly-
+decoded content: traced `$4008` directly and found the driver gates
+triangle's linear counter in genuine 1-3 tick (4-12ms) staccato bursts
+starting exactly at 64s -- a real NES chiptune technique, not a decode bug.
+OPL2's envelope generator can't usefully attack in 4ms, so translating every
+gate-off into a full note-off/note-on retrigger effectively muted the voice
+through its busiest passage. Fixed with `_bridge_short_gaps`/
+`TRIANGLE_MIN_GATE_TICKS` in `opl2_translate.py`: gaps <= 3 ticks now hold
+the previous note through them instead of retriggering (555 -> 86 real
+note-offs in the 64-78s window).
+
+Separately fixed `src/main.c`'s vsync/audio loop, which had broken entirely
+during earlier reordering attempts: adopted the exact pattern already proven
+in `RPDemo` (the user's own other RP6502 project) -- a single `vsync_last`
+tracking variable, sync-check at the top of the loop with `continue`, and
+`update_music_advance(1)` called unconditionally once per confirmed real
+vsync tick (no ticks-delta math, nothing to desync). A real hardware-IRQ
+approach (matching `PETSCIIRobots-RP6502`'s pattern) was attempted first and
+reverted: RP6502's llvm-mos platform (unlike PETSCIIRobots' cc65 build) has
+no 6502 vector table at all in its linker script (`mos-platform/rp6502/
+link.ld` just jumps to `_start` from a raw memory image) -- confirmed via a
+register-peek test showing zero OPL2 activity after 380+ frames with the IRQ
+armed, i.e. it never fires.
+
+Simplified `acquire_channel()`'s dynamic voice-stealing pool to a fixed 1:1
+`MELODIC_CHANNEL_BY_SOURCE` mapping, at the user's suggestion: the pool was
+already sized to exactly match the 5-source count, so stealing could never
+actually fire (confirmed: regenerating through both paths produces identical
+event/byte counts). Removed `VoiceState.owner`/`.last_tick` and
+`self.logical_channel` as dead weight along with it.
+
+Ran a full-NSF instrument census (all 22 tracks) after the user suspected an
+undercounted voice: confirmed tracks 3/5/7 use up to 4 simultaneous N163
+channels, not 2 -- `import_nsf.py` only ever exposed `n163_0`/`n163_1`,
+silently dropping a real 3rd/4th voice on those three tracks. Fixed by
+exposing all 4 N163 slots unconditionally in the decode step, and adding a
+second "wide" channel profile (`MELODIC_CHANNEL_BY_SOURCE_WIDE`/
+`MELODIC_SOURCE_INFO_WIDE`, selected by `WIDE_TRACK_INDICES = {3,5,7}`):
+these three tracks never play concurrently with gameplay music or SFX, so
+they don't need channel 5 reserved, and none of them use the triangle
+channel at all, so channels 0-5 map directly to sq1/sq2/n163_0..3 (6
+sources, 6 channels, still 1:1). The same census also confirmed the SFX-
+channel-5 reservation is correctly sized: every actual SFX track in the NSF
+(tracks 8-21) needs at most one simultaneous melodic voice alongside noise.
+
+See `ROADMAP.md` for the full game-completion task list beyond music, and
+the per-track usage table cross-referenced against this census.
+
 ## Git discipline
 
 - Keep this branch as the work-tracking branch.
