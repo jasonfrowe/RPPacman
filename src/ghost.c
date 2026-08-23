@@ -7,6 +7,7 @@
 #include "sprite_mode5.h"
 #include "player.h"
 #include "ghost.h"
+#include "opl.h"
 
 // Ghost base sprite frames (normal chase mode):
 // Ghost 0: Red (Blinky)   -> Base 8 (Up 8..9, Down 10..11, Left 12..13, Right 14..15)
@@ -85,8 +86,10 @@ void start_pacman_death_sequence(void) {
         s_death_last_dir = (player.dir != DIR_NONE) ? player.dir : DIR_LEFT;
         s_ghosts_eaten_chain = 0;   // Reset scared ghost combo chain on death
         s_frightened_timer = 0;     // Cancel active frightened power pellet state on death
+        sfx_set_ambient("ROM:sfxnormal"); // Match: frightened may have been active
         reset_player_on_death();    // Reset Pac-Dots eaten multiplier tier back to 10 points (0-59 dots)
         clear_all_active_score_popups(); // Remove any ghost or prize score popups off-screen
+        sfx_play("ROM:sfxdeath");
     }
 }
 
@@ -165,6 +168,7 @@ static uint8_t s_active_eat_anim_ghost = 0;
 
 void trigger_eaten_ghost_animation(uint8_t ghost_index, uint32_t pts) {
     s_active_eat_anim_ghost = ghost_index;
+    sfx_play("ROM:sfxghosteat");
 
     // Use single score display slot. Any existing score display is overwritten by the new one.
     eaten_score_anim_t *sa = &s_single_score_anim;
@@ -262,6 +266,7 @@ void trigger_power_pellet_frightened(void) {
     s_frightened_max_duration = FRIGHTENED_DURATION_TABLE[speed_lvl];
     s_frightened_timer = s_frightened_max_duration;
     // NOTE: s_ghosts_eaten_chain is NOT reset here! Combo chain continues across pellets until timer expires.
+    sfx_set_ambient("ROM:sfxfrightened");
 
     for (int i = 0; i < NGHOSTS; i++) {
         ghost_struct *g = &ghosts[i];
@@ -330,6 +335,10 @@ void check_pacman_ghost_collisions(void) {
                 // Set 30-frame pause for all motion & trigger eat animation
                 s_eat_pause_timer = 30;
                 trigger_eaten_ghost_animation(i, pts);
+                // Only one ghost eaten per collision check -- otherwise
+                // two frightened ghosts overlapping Pac-Man on the same
+                // pixel both get eaten (and scored) in the same frame.
+                break;
             } else if (g->mode == GHOST_MODE_CHASE) {
                 // Normal ghost catches Pac-Man! Trigger Pac-Man death sequence
                 start_pacman_death_sequence();
@@ -593,6 +602,50 @@ static void update_ghost_outside_movement(int ghost_index) {
     }
 }
 
+// Tile value taxonomy (from the map author): 0 = blank floor, 116-119 =
+// pellet/dot variants, 120-124 = score-popup digit overlays (temporary,
+// still walkable) -- all safe. 1-115 = real maze wall art. 125-127 =
+// out-of-bounds markers (void beyond the maze, not real wall geometry).
+// 1-115 and 125-127 are both "can't stand here."
+static bool is_ghost_safe_tile_value(uint8_t v) {
+    return v == 0 || (v >= 116 && v <= 124);
+}
+
+static uint8_t read_maze_tile(uint16_t tx, uint16_t ty) {
+    uint16_t offset = ty * MAZE_MAP_WIDTH + tx;
+    RIA.addr0 = MAZE_MAP_DATA + offset;
+    RIA.step0 = 1;
+    return RIA.rw0;
+}
+
+// How far outward (in tiles, straight-line) to look for a safe tile
+// before giving up and falling back to the teleport-home recovery. The
+// maze is 47x30 tiles, so this comfortably covers any transition-caused
+// pocket without an unbounded scan.
+#define GHOST_ESCAPE_SCAN_MAX 20
+
+// Scans outward from (tx,ty) in a single direction and returns the
+// distance (in tiles) to the nearest safe tile, or 0xFF if none found
+// within GHOST_ESCAPE_SCAN_MAX. Deliberately does NOT stop at the first
+// wall/out-of-bounds tile it crosses -- a ghost stuck deep in a
+// transition-created pocket may need to cross more invalid tiles before
+// reaching real safety, and the ghost movement loop has no per-pixel
+// wall check (only at_intersection direction choices consult
+// can_step_dir), so walking through them here is safe.
+static uint8_t scan_direction_for_safe_tile(uint16_t tx, uint16_t ty, int8_t dx, int8_t dy) {
+    for (uint8_t dist = 1; dist <= GHOST_ESCAPE_SCAN_MAX; dist++) {
+        int16_t nx = (int16_t)tx + (int16_t)dx * dist;
+        int16_t ny = (int16_t)ty + (int16_t)dy * dist;
+        if (nx < 0 || nx >= MAZE_MAP_WIDTH || ny < 0 || ny >= MAZE_MAP_HEIGHT) {
+            return 0xFF;
+        }
+        if (is_ghost_safe_tile_value(read_maze_tile((uint16_t)nx, (uint16_t)ny))) {
+            return dist;
+        }
+    }
+    return 0xFF;
+}
+
 void check_and_reset_stuck_ghosts(void) {
     for (int i = 0; i < NGHOSTS; i++) {
         ghost_struct *g = &ghosts[i];
@@ -603,14 +656,42 @@ void check_and_reset_stuck_ghosts(void) {
 
         if (tx >= MAZE_MAP_WIDTH || ty >= MAZE_MAP_HEIGHT) continue;
 
-        uint16_t offset = ty * MAZE_MAP_WIDTH + tx;
-        RIA.addr0 = MAZE_MAP_DATA + offset;
-        RIA.step0 = 1;
-        uint8_t tile_val = RIA.rw0;
+        uint8_t tile_val = read_maze_tile(tx, ty);
 
-        // Check if ghost is on an invalid wall tile (1..115 or 126..127)
-        if ((tile_val >= 1 && tile_val <= 115) || (tile_val >= 126 && tile_val <= 127)) {
-            // Reset ghost back to home base position, preserving current mode (e.g. FRIGHTENED stays FRIGHTENED)
+        // Ghost is standing on a wall or out-of-bounds tile. This happens
+        // when a maze-transition column reveal turns the tile a ghost is
+        // standing on into a wall out from under it, not from normal
+        // movement (can_step_dir already keeps ghosts from walking into a
+        // wall that already exists).
+        if (!is_ghost_safe_tile_value(tile_val)) {
+            // Walk it out toward the nearest safe tile instead of
+            // teleporting it home -- scan all 4 cardinal directions (the
+            // safe tile may be more than one step away, e.g. deep inside
+            // a transition-created pocket) and hand off to the normal
+            // per-frame movement code via g->dir.
+            static const int8_t SCAN_DX[4]  = { 0, 0, -1, 1 };
+            static const int8_t SCAN_DY[4]  = { -1, 1, 0, 0 };
+            static const int8_t SCAN_DIR[4] = { DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT };
+
+            uint8_t best_dist = 0xFF;
+            int8_t escape_dir = DIR_NONE;
+            for (uint8_t d = 0; d < 4; d++) {
+                uint8_t dist = scan_direction_for_safe_tile(tx, ty, SCAN_DX[d], SCAN_DY[d]);
+                if (dist < best_dist) {
+                    best_dist = dist;
+                    escape_dir = SCAN_DIR[d];
+                }
+            }
+
+            if (escape_dir != DIR_NONE) {
+                g->dir = escape_dir;
+                continue;
+            }
+
+            // No safe tile within GHOST_ESCAPE_SCAN_MAX in any direction
+            // (should be extremely rare): fall back to the old
+            // teleport-home recovery so a ghost can never get permanently
+            // stuck.
             g->world_px = GHOST_HOME_X[i];
             g->world_py = GHOST_MAX_Y[i]; // Row 16 (128px)
             g->sub_px = g->world_px << 8;
@@ -864,6 +945,7 @@ void ghost_update_motion(void) {
         s_frightened_timer--;
         if (s_frightened_timer == 0) {
             s_ghosts_eaten_chain = 0;
+            sfx_set_ambient("ROM:sfxnormal");
             for (int i = 0; i < NGHOSTS; i++) {
                 if (ghosts[i].mode == GHOST_MODE_FRIGHTENED) {
                     ghosts[i].mode = GHOST_MODE_CHASE;
@@ -1040,6 +1122,13 @@ void ghost_update_motion(void) {
             update_ghost_outside_movement(i);
         }
     }
+
+    // General safety net, not just during maze transitions: catches any
+    // ghost that ends up on an invalid tile for whatever reason (e.g. an
+    // out-of-bounds escape near the vertical tunnel) and walks it back to
+    // the nearest open tile. Only acts on ghosts already confirmed stuck,
+    // so safe to run unconditionally every frame.
+    check_and_reset_stuck_ghosts();
 
     // --- 2. Manage Ghost Exit Eligibility & Progression ---
     if (s_game_motion_started) {
