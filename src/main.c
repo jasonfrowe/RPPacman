@@ -65,6 +65,7 @@ void start_title_screen(void) {
     s_game_bgm_playing = false;
 
     music_stop();
+    sfx_stop();
     title_anim_reset();
 
     // 1. Hide maze by setting maze palette to all black
@@ -109,6 +110,7 @@ void start_warm_title_screen(void) {
     s_game_bgm_playing = false;
 
     music_stop();
+    sfx_stop();
     title_anim_reset();
     hide_all_ghosts();
     set_pacman_cursor_hidden();
@@ -120,6 +122,7 @@ void start_normal_game(void) {
     s_game_bgm_playing = false;
 
     music_stop();
+    sfx_stop();
 
     // 1. Clear text map & hide title screen
     write_text_to_text_map(11, 6,  "                  ");
@@ -216,6 +219,9 @@ int main(void)
         // variable and no ticks-delta math, so there's nothing for a
         // loop reorder to desync.
         update_music_advance(1);
+        // Reserved SFX channel (5): fully independent of the above, same
+        // once-per-real-tick contract.
+        update_sfx_advance(1);
 
         // 2. INPUT
         input_poll(&actions);
@@ -454,6 +460,7 @@ int main(void)
                         // remapped in CMakeLists.txt to PacManCE_01.BIN)
                         s_game_bgm_playing = true;
                         music_init("ROM:pacman03");
+                        sfx_set_ambient("ROM:sfxnormal");
                     }
                     break;
                 }
@@ -530,6 +537,7 @@ int main(void)
             if (!s_game_bgm_playing && is_game_motion_started()) {
                 s_game_bgm_playing = true;
                 music_init("ROM:pacman03");
+                sfx_set_ambient("ROM:sfxnormal");
             }
 
             if (is_game_timer_expired()) {
