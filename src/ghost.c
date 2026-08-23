@@ -388,6 +388,17 @@ static void compute_ghost_target_tile(int ghost_index, int16_t *target_tx, int16
                 // 32-bit multiply the 6502 has no hardware support for.
                 int16_t dx = clyde_tx - pac_tx;
                 int16_t dy = clyde_ty - pac_ty;
+
+                // Fold to the shorter wrapped-around distance -- see the
+                // matching comment in the per-intersection direction
+                // selection below. Without this, Clyde near one tunnel
+                // mouth could read Pac-Man (just past the other mouth) as
+                // far away instead of within his 8-tile "shy" radius.
+                if (dx > (MAZE_MAP_WIDTH / 2)) dx -= MAZE_MAP_WIDTH;
+                else if (dx < -(MAZE_MAP_WIDTH / 2)) dx += MAZE_MAP_WIDTH;
+                if (dy > (MAZE_MAP_HEIGHT / 2)) dy -= MAZE_MAP_HEIGHT;
+                else if (dy < -(MAZE_MAP_HEIGHT / 2)) dy += MAZE_MAP_HEIGHT;
+
                 int16_t dist_sq = (dx * dx) + (dy * dy);
 
                 if (dist_sq > (8 * 8)) {
@@ -539,6 +550,23 @@ static void update_ghost_outside_movement(int ghost_index) {
                     // intersection, so it's the hottest of these.
                     int16_t diff_x = next_tx - target_tx;
                     int16_t diff_y = next_ty - target_ty;
+
+                    // The maze wraps both axes (horizontal tunnel,
+                    // vertical tunnel), but target/next tile coordinates
+                    // are plain unwrapped numbers -- a ghost one tile
+                    // from the tunnel mouth and Pac-Man one tile past it
+                    // on the far side would otherwise measure as almost
+                    // the full map width/height apart instead of 2 tiles,
+                    // which could steer a ghost away from the tunnel
+                    // right as Pac-Man wraps through it. Folding to the
+                    // shorter of the direct or wrapped-around distance
+                    // fixes that without needing to know where the
+                    // tunnel actually is.
+                    if (diff_x > (MAZE_MAP_WIDTH / 2)) diff_x -= MAZE_MAP_WIDTH;
+                    else if (diff_x < -(MAZE_MAP_WIDTH / 2)) diff_x += MAZE_MAP_WIDTH;
+                    if (diff_y > (MAZE_MAP_HEIGHT / 2)) diff_y -= MAZE_MAP_HEIGHT;
+                    else if (diff_y < -(MAZE_MAP_HEIGHT / 2)) diff_y += MAZE_MAP_HEIGHT;
+
                     int16_t dist_sq = (diff_x * diff_x) + (diff_y * diff_y);
 
                     if (dist_sq < min_dist_sq) {
@@ -931,16 +959,23 @@ void ghost_update_motion(void) {
                 g->world_py = row16_y;
                 g->sub_py = row16_y << 8;
 
-                // Eaten return Step 3: Move horizontally to designated spawn X column
-                if (g->world_px < home_x) {
-                    g->dir = DIR_RIGHT;
-                    g->world_px++;
-                    g->sub_px = g->world_px << 8;
-                } else if (g->world_px > home_x) {
-                    g->dir = DIR_LEFT;
-                    g->world_px--;
-                    g->sub_px = g->world_px << 8;
-                } else {
+                // Eaten return Step 3: Move horizontally to designated spawn
+                // X column, at the same 2.0x-level-speed rate as the descent
+                // above (was a hardcoded 1px/frame regardless of level
+                // speed, so this leg didn't get faster as the game did).
+                if (g->world_px != home_x) {
+                    g->dir = (g->world_px < home_x) ? DIR_RIGHT : DIR_LEFT;
+                    g->sub_px += enter_speed_fp;
+                    uint16_t move_px = g->sub_px >> 8;
+                    g->sub_px &= 0x00FF;
+                    for (uint16_t step = 0; step < move_px; step++) {
+                        if (g->world_px < home_x) g->world_px++;
+                        else if (g->world_px > home_x) g->world_px--;
+                        if (g->world_px == home_x) break;
+                    }
+                }
+
+                if (g->world_px == home_x) {
                     // Reached home spawn position (home_x, 16)! Restore normal CHASE mode & start home bounce facing DIR_UP
                     g->mode = GHOST_MODE_CHASE;
                     g->state = GHOST_STATE_HOME_BOUNCE;
