@@ -179,7 +179,6 @@ static bool init_graphics(void)
 }
 
 uint8_t vsync_last = 0;
-uint8_t s_music_vsync_last = 0;
 uint8_t frame = 0;
 
 int main(void)
@@ -208,7 +207,17 @@ int main(void)
 
     // Main loop
     while (true) {
-        // 1. INPUT
+        // 1. SYNC (wait for real vsync tick)
+        if (RIA.vsync == vsync_last) continue;
+        vsync_last = RIA.vsync;
+
+        // Advance OPL2 music sequencer -- always exactly 1 tick per real
+        // vsync tick, matching RPDemo's proven pattern: a single sync
+        // variable and no ticks-delta math, so there's nothing for a
+        // loop reorder to desync.
+        update_music_advance(1);
+
+        // 2. INPUT
         input_poll(&actions);
 
         bool press_up = (actions.up && !prev_up);
@@ -531,22 +540,6 @@ int main(void)
                 tile_mode2_palette_update(frame);
             }
         }
-
-        // 4. SYNC (Wait for VSYNC)
-        while (RIA.vsync == vsync_last) {
-            // Do nothing, just wait
-        }
-
-        uint8_t now_vsync = RIA.vsync;
-        uint8_t music_ticks = (uint8_t)(now_vsync - s_music_vsync_last);
-        if (music_ticks == 0u) {
-            music_ticks = 1u;
-        }
-        s_music_vsync_last = now_vsync;
-        vsync_last = now_vsync;
-
-        // Advance OPL2 music sequencer
-        update_music_advance(music_ticks);
 
         frame++;
         if (frame >= 60) frame = 0;
