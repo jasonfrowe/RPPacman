@@ -70,6 +70,15 @@ static uint16_t s_frightened_timer = 0;
 static uint16_t s_frightened_max_duration = 0;
 static uint16_t s_ghosts_eaten_chain = 0; // Continuous combo counter across Power Pellets!
 
+// Frightened outline-color cycle pacing: 8 stages spread evenly across
+// the current frightened duration (s_frightened_stage_len = duration/8,
+// via shift since 8 is a power of two -- no 6502 division needed). Later
+// levels have a shorter FRIGHTENED_DURATION_TABLE entry, so the same 8
+// stages play out faster, matching the ghosts' own flash-rate speedup.
+static uint16_t s_frightened_stage_len = 0;
+static uint16_t s_frightened_stage_countdown = 0;
+static uint8_t s_frightened_stage = 0;
+
 bool is_eat_pause_active(void) {
     return s_eat_pause_timer > 0;
 }
@@ -267,6 +276,10 @@ void trigger_power_pellet_frightened(void) {
     s_frightened_max_duration = FRIGHTENED_DURATION_TABLE[speed_lvl];
     s_frightened_timer = s_frightened_max_duration;
     // NOTE: s_ghosts_eaten_chain is NOT reset here! Combo chain continues across pellets until timer expires.
+    s_frightened_stage_len = s_frightened_max_duration >> 3;
+    if (s_frightened_stage_len == 0) s_frightened_stage_len = 1;
+    s_frightened_stage_countdown = s_frightened_stage_len;
+    s_frightened_stage = 0;
     sfx_set_ambient("ROM:sfxfrightened");
     set_frightened_palette(true);
 
@@ -944,6 +957,14 @@ void ghost_update_motion(void) {
 
     // --- Power Pellet Frightened Timer Management ---
     if (s_frightened_timer > 0) {
+        if (s_frightened_stage < 7) {
+            s_frightened_stage_countdown--;
+            if (s_frightened_stage_countdown == 0) {
+                s_frightened_stage++;
+                set_frightened_palette_stage(s_frightened_stage);
+                s_frightened_stage_countdown = s_frightened_stage_len;
+            }
+        }
         s_frightened_timer--;
         if (s_frightened_timer == 0) {
             s_ghosts_eaten_chain = 0;

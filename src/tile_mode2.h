@@ -15,7 +15,7 @@ static const uint16_t maze_palette[16] = {
     0x053F, // yellow -- power pellets
     0x78E7, // dark purple -- maze outline (6)
     0x82A6, // dark grey 
-    0xBAAE, // purple -- maze-outline 
+    0xBAAE, // purple -- maze-outline (8)
     0x972E,
     0xE6AC,
     0x0020, // index for animations. (11)
@@ -74,6 +74,7 @@ void write_text_to_text_map(uint8_t tx, uint8_t ty, const char *str);
 void set_maze_palette_black(void);
 void restore_maze_palette(void);
 void set_frightened_palette(bool active);
+void set_frightened_palette_stage(uint8_t stage);
 void set_title_palette_black(void);
 void restore_title_palette(void);
 void set_title_palette_scaled(uint8_t num, uint8_t den, bool white_boost, uint8_t white_step, bool cold_start);

@@ -182,16 +182,56 @@ void restore_maze_palette(void) {
     s_index6_color = maze_palette[6];
 }
 
+// The 8-stage frightened outline-color cycle (indices 6/8). Ear/eye-tuned
+// values from the user; stages 0-2 repeat once before stages 6-7 finish
+// the sequence. Advanced by ghost.c's frightened timer, spread evenly
+// across however long the current frightened period actually lasts, so
+// the cycle runs faster on later levels (shorter frightened duration)
+// without needing any separate speed table here.
+static const uint16_t FRIGHTENED_PALETTE_STAGES[8][2] = {
+    // { index8, index6 }
+    {0xB53D, 0x6274},
+    {0x8D3C, 0x1AB3},
+    {0xE53B, 0x9A72},
+    {0xB53D, 0x6274},
+    {0x8D3C, 0x1AB3},
+    {0xE53B, 0x9A72},
+    {0x5A35, 0x00EB},
+    {0x9272, 0x58AB},
+};
+
+// Writes one stage of the frightened outline-color cycle (indices 6/8).
+// s_index6_color tracks whatever index 6 currently holds -- the kick-drum
+// beat flash (index 11) mirrors it, frightened or not.
+void set_frightened_palette_stage(uint8_t stage) {
+    if (stage > 7) stage = 7;
+    uint16_t c8 = FRIGHTENED_PALETTE_STAGES[stage][0];
+    uint16_t c6 = FRIGHTENED_PALETTE_STAGES[stage][1];
+
+    RIA.addr0 = MAZE_PALETTE_ADDR + (6 * 2);
+    RIA.step0 = 1;
+    RIA.rw0 = c6 & 0xFF;
+    RIA.rw0 = c6 >> 8;
+    s_index6_color = c6;
+
+    RIA.addr0 = MAZE_PALETTE_ADDR + (8 * 2);
+    RIA.step0 = 1;
+    RIA.rw0 = c8 & 0xFF;
+    RIA.rw0 = c8 >> 8;
+}
+
 // Swaps the maze-outline colors (indices 6 and 8) to the frightened
-// targets (indices 2 and 3) while ghosts are vulnerable, or back to
-// their normal values otherwise. s_index6_color tracks whichever of
-// those index 6 currently holds, since maze_palette[] itself is a
-// compile-time constant and can't reflect this swap -- the kick-drum
-// beat flash (index 11) mirrors whatever index 6 currently is, frightened
-// or not.
+// cycle's first stage while ghosts are vulnerable, or back to their
+// normal values otherwise. See set_frightened_palette_stage() for the
+// per-stage writes used while frightened is actually running.
 void set_frightened_palette(bool active) {
-    uint16_t c6 = active ? maze_palette[2] : maze_palette[6];
-    uint16_t c8 = active ? maze_palette[3] : maze_palette[8];
+    if (active) {
+        set_frightened_palette_stage(0);
+        return;
+    }
+
+    uint16_t c6 = maze_palette[6];
+    uint16_t c8 = maze_palette[8];
 
     RIA.addr0 = MAZE_PALETTE_ADDR + (6 * 2);
     RIA.step0 = 1;
