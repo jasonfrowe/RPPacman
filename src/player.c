@@ -10,6 +10,17 @@
 
 static int8_t queued_dir = DIR_NONE;
 
+// Dot-eat movement freeze. The original arcade (pacman.holenet.info)
+// stalls 1 frame per regular dot and 3 per power pellet; Pac-Man CE's NES
+// port visibly eases that off -- confirmed by the user against a real CE
+// playthrough recording: only every *other* regular dot stalls (1 frame),
+// and a power pellet is always a flat 1-frame stall, not 3. Counts down
+// once per frame in player_update_motion's movement section; input and
+// turn queueing keep working normally during the stall, only forward
+// movement is held.
+static uint8_t s_eat_stall_frames = 0;
+static bool s_dot_stall_parity = false; // toggles each regular dot eaten; stalls on true
+
 bool is_wall_tile(int16_t world_x, int16_t world_y) {
     while (world_x < 0) world_x += WORLD_WIDTH;
     while (world_x >= WORLD_WIDTH) world_x -= WORLD_WIDTH;
@@ -179,6 +190,19 @@ static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
 
         uint8_t score_tile = get_score_tile_index(dot_pts);
         push_score_popup(tile_x, tile_y, score_tile);
+
+        // CE's eased-off dot-eat freeze (see s_eat_stall_frames comment):
+        // power pellet is always 1 frame; a regular dot only stalls on
+        // every other one. Take the max rather than overwrite/add, in
+        // case a stall from a previous eat this same frame is pending.
+        uint8_t stall = 0;
+        if (tile_index == 117) {
+            stall = 1;
+        } else {
+            s_dot_stall_parity = !s_dot_stall_parity;
+            if (s_dot_stall_parity) stall = 1;
+        }
+        if (stall > s_eat_stall_frames) s_eat_stall_frames = stall;
 
         // If a Power Pellet / Super Pellet (117) was eaten, trigger Frightened mode
         if (tile_index == 117) {
@@ -377,7 +401,12 @@ void player_update_motion(const input_actions_t *actions) {
     }
 
     // 3. Continuous arcade movement using 8.8 fixed-point speed table
-    if (player.dir != DIR_NONE) {
+    if (s_eat_stall_frames > 0) {
+        // Frozen this frame from a dot/power-pellet eat: no subpixel
+        // accumulation, no movement, and no reset -- resumes exactly
+        // where it left off once the stall ends.
+        s_eat_stall_frames--;
+    } else if (player.dir != DIR_NONE) {
         int8_t dx, dy;
         get_dir_offset(player.dir, &dx, &dy);
 
