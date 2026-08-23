@@ -137,6 +137,32 @@ MELODIC_SOURCE_INFO_WIDE = {
     8: ('n163_3', 39),
 }
 
+# SFX profile: the reserved SFX channel (5) runs as a fully independent
+# second audio lane alongside the always-playing, never-interrupted
+# gameplay track -- an ambient loop (track 21 normal / 20 frightened)
+# that one-shot event stingers (dying, pellet, ghost-eaten, prize, extra
+# life) temporarily cut in over, then fall back from. Since gameplay
+# music already owns channels 0-4 and 6-8 continuously, every SFX/ambient
+# track has to live entirely on channel 5 -- no rhythm mode, one melodic
+# voice.
+#
+# Confirmed by direct census that each candidate track (12/13/15/16/18/
+# 19/20/21) uses exactly one melodic source apiece -- n163_0 for most,
+# but sq2 for 16 and sq1 for 18. They must be translated one source at a
+# time, not all three mapped onto channel 5 together: VoiceState is keyed
+# by physical channel, so a silent source sharing that channel with an
+# active one would issue a spurious note-off on it every single frame
+# (tried this first -- event counts blew up ~5x from constant
+# unnecessary retriggering before the real note-changes were ever
+# reached). SFX_TRACK_SOURCE records which single source each track
+# actually uses.
+SFX_SOURCE_INFO = {
+    0: ('sq1', 80),
+    1: ('sq2', 81),
+    5: ('n163_0', 38),
+}
+SFX_TRACK_SOURCE = {12: 5, 13: 5, 15: 5, 16: 1, 18: 0, 19: 5, 20: 5, 21: 5}
+
 # Physical channels 6-8 are dedicated to real OPL2 rhythm mode (register
 # 0xBD) instead of faking percussion with ordinary 2-op FM voices. This is
 # the only way to get the chip's actual hardware noise generator, which is
@@ -161,7 +187,9 @@ RYT_HH = 0x01
 # listening to the regenerated tracks -- n163_2/n163_3 (the wide-profile
 # tracks' extra N163 lanes, sharing patches 38/39 with n163_0/n163_1) get
 # the same trim as their patch-sharing counterpart for consistency.
-MIX_TRIM_BY_SOURCE = {0: 4, 2: 10, 5: 1, 6: 3, 7: 1, 8: 3}
+# Triangle (2) tightened back up by 3 (~2.25dB quieter) on further
+# listening -- was reading as too loud again after the earlier mix pass.
+MIX_TRIM_BY_SOURCE = {0: 4, 2: 13, 5: 1, 6: 3, 7: 1, 8: 3}
 
 # Per-logical-source fine-tune in cents, added on top of the exact f-number
 # computation in midi_to_fnum (positive = sharper). Empty by default; this
@@ -224,6 +252,7 @@ class OPL2Translator:
         self.prev_dmc_note = 0
         self.tick = 0
         self.channel_map = MELODIC_CHANNEL_BY_SOURCE
+        self.sfx = False
         # Pac-Man CE leans toward a bright, punchy arcade synth: tight lead,
         # clipped bass, and dry support voices with little extra resonance.
         self.patch_bank: Dict[int, Dict[str, int]] = {
@@ -635,7 +664,12 @@ class OPL2Translator:
         # compares it against the raw incoming `vol` to detect changes.
         rescaled = min(63, volume_63 * 63 // 15) if volume_63 > 0 else 0
         tl = self.velocity_to_opl_tl(rescaled)
-        tl = max(0, min(63, tl + MIX_TRIM_BY_SOURCE.get(source, 0)))
+        # SFX tracks are solo on their own channel, not one voice sitting
+        # back in a mix of several, so the per-source mix trim (tuned for
+        # balance within gameplay music) doesn't apply -- they get full
+        # chip loudness instead.
+        trim = 0 if self.sfx else MIX_TRIM_BY_SOURCE.get(source, 0)
+        tl = max(0, min(63, tl + trim))
         reg = 0x40 + CAR_OFFSETS[channel]
         state.volume = volume_63
         state.tl = tl
@@ -756,7 +790,8 @@ class OPL2Translator:
 
         return events
 
-    def translate_frame_history(self, history, wide: bool = False) -> List[OPL2Event]:
+    def translate_frame_history(self, history, wide: bool = False, sfx: bool = False,
+                                 sfx_source: int = 5) -> List[OPL2Event]:
         """Build the OPL2 event stream directly from real 60Hz NSF frames.
 
         No row/pattern quantization: 1 history frame is 1 tick in the
@@ -774,6 +809,20 @@ class OPL2Translator:
         tracks 3/5/7 specifically, which never play concurrently with
         gameplay music or SFX and need up to 4 simultaneous N163 channels
         rather than 2 (see those constants' comments).
+
+        sfx=True translates only the single source named by sfx_source
+        (see SFX_SOURCE_INFO/SFX_TRACK_SOURCE) onto channel 5, and skips
+        rhythm_setup()/process_rhythm() entirely -- these tracks share the
+        chip with the always-playing, never-interrupted gameplay track, so
+        they may only ever touch channel 5. Only one source is ever
+        included, never all of them at once: VoiceState is keyed by
+        physical channel, so a second, silent source mapped onto the same
+        channel would issue a spurious note-off on it every frame it's
+        silent, corrupting the active source's note-change tracking (see
+        SFX_TRACK_SOURCE's comment). Mutually exclusive with wide (both
+        are for tracks that don't share the chip with gameplay music, in
+        opposite ways -- wide because it owns the whole chip alone, sfx
+        because it must not touch any channel gameplay music owns).
         """
         # Fully self-contained: reset all per-translation state here so a
         # translator instance can safely be reused across tracks or not.
@@ -782,19 +831,28 @@ class OPL2Translator:
         self.prev_noise_bit = 0
         self.prev_dmc_note = 0
         self.tick = 0
-        self.channel_map = MELODIC_CHANNEL_BY_SOURCE_WIDE if wide else MELODIC_CHANNEL_BY_SOURCE
-        source_info = MELODIC_SOURCE_INFO_WIDE if wide else MELODIC_SOURCE_INFO
+        self.sfx = sfx
+        if sfx:
+            self.channel_map = {sfx_source: 5}
+            source_info = {sfx_source: SFX_SOURCE_INFO[sfx_source]}
+        elif wide:
+            self.channel_map = MELODIC_CHANNEL_BY_SOURCE_WIDE
+            source_info = MELODIC_SOURCE_INFO_WIDE
+        else:
+            self.channel_map = MELODIC_CHANNEL_BY_SOURCE
+            source_info = MELODIC_SOURCE_INFO
 
         out: List[OPL2Event] = []
-        out.extend(self.rhythm_setup())
+        if not sfx:
+            out.extend(self.rhythm_setup())
         last_index = 0  # frame index the most recent emitted batch corresponds to
 
         # See TRIANGLE_MIN_GATE_TICKS: the driver gates triangle's linear
         # counter in bursts too short for OPL2's envelope to attack in, so
         # this pre-pass bridges the short gaps before process_melodic ever
         # sees them, rather than trying to react to them tick by tick. The
-        # wide profile never includes triangle (see MELODIC_SOURCE_INFO_WIDE),
-        # so skip this entirely when it's not in play.
+        # wide/sfx profiles never include triangle, so skip this entirely
+        # when it's not in play.
         tri_bridged = None
         if 2 in source_info:
             tri_gated = [frame['tri'] for frame in history]
@@ -808,7 +866,8 @@ class OPL2Translator:
                 note, vol = tri_bridged[i] if (source == 2 and tri_bridged is not None) else frame[hist_key]
                 frame_events.extend(self.process_melodic(source, note, inst, vol))
 
-            frame_events.extend(self.process_rhythm(frame['noise'][0], frame['dmc'][0]))
+            if not sfx:
+                frame_events.extend(self.process_rhythm(frame['noise'][0], frame['dmc'][0]))
 
             if frame_events:
                 # The wait since the previous batch belongs on the
@@ -837,15 +896,16 @@ class OPL2Translator:
 # profile instead of the standard one -- see MELODIC_CHANNEL_BY_SOURCE_WIDE.
 WIDE_TRACK_INDICES = {3, 5, 7}
 
-
 def translate_nsf_track(nsf_path: str, track_idx: int = 0, loops: int = 1) -> List[OPL2Event]:
     converter = NSFConverter(nsf_path)
     history = converter.build_subframe_history(track_idx)
     translator = OPL2Translator()
     wide = track_idx in WIDE_TRACK_INDICES
+    sfx = track_idx in SFX_TRACK_SOURCE
+    sfx_source = SFX_TRACK_SOURCE.get(track_idx, 5)
     events: List[OPL2Event] = []
     for _ in range(max(1, loops)):
-        events.extend(translator.translate_frame_history(history, wide=wide))
+        events.extend(translator.translate_frame_history(history, wide=wide, sfx=sfx, sfx_source=sfx_source))
     return events
 
 
@@ -857,7 +917,9 @@ def export_all_tracks(nsf_path: str, output_dir: str) -> List[str]:
 
     for track_idx in range(converter.total_songs):
         history = converter.build_subframe_history(track_idx)
-        events = translator.translate_frame_history(history, wide=track_idx in WIDE_TRACK_INDICES)
+        events = translator.translate_frame_history(
+            history, wide=track_idx in WIDE_TRACK_INDICES,
+            sfx=track_idx in SFX_TRACK_SOURCE, sfx_source=SFX_TRACK_SOURCE.get(track_idx, 5))
         out_path = os.path.join(output_dir, f"track_{track_idx:02d}.json")
         with open(out_path, "w", encoding="utf-8") as fh:
             json.dump([e.to_tuple() for e in events], fh, separators=(",", ":"))
