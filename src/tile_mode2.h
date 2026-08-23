@@ -4,20 +4,21 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+
 // Palette extracted from Sprites/Tiles.png
 static const uint16_t maze_palette[16] = {
     0x0000,
     0x0020, // black background 
-    0x30B6, // dark red
-    0x623B, // pink-red
+    0x21F8, // orange-red
+    0x7C7F, // pink
     0x6D29, // green
     0x053F, // yellow -- power pellets
-    0xB825,
-    0x82A6,
-    0xFA28,
+    0x78E7, // dark purple -- maze outline (6)
+    0x82A6, // dark grey 
+    0xBAAE, // purple -- maze-outline 
     0x972E,
     0xE6AC,
-    0x97BF,
+    0x0020, // index for animations. (11)
     0xFDF4,
     0xFFFF,
     0x0020,
