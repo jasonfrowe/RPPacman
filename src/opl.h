@@ -33,6 +33,18 @@ extern void music_set_tempo_scale(uint16_t scale_256);
 extern void music_stop(void);
 extern void music_pause(void);
 extern void music_resume(void);
+
+// The reserved SFX channel (5): a fully independent second audio lane
+// alongside the always-playing gameplay music. sfx_set_ambient() picks
+// what loops there by default (the frightened/normal ambient tracks);
+// sfx_play() cuts in a one-shot event stinger that automatically falls
+// back to the current ambient once it finishes. update_sfx_advance()
+// must be called once per real vsync tick, the same way
+// update_music_advance() is.
+extern void sfx_set_ambient(const char* filename);
+extern void sfx_play(const char* filename);
+extern void sfx_stop(void);
+extern void update_sfx_advance(uint8_t ticks);
 extern void OPL_SetPatch(uint8_t channel, const OPL_Patch* patch);
 extern void shutdown_audio(void);
 

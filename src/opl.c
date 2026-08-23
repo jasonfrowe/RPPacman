@@ -149,20 +149,37 @@ void OPL_Config(uint8_t enable, uint16_t addr) {
 #endif
 }
 
-static int music_fd = -1;
-static uint8_t music_buffer[512];
-static uint16_t music_buf_idx = 0;
-static uint16_t music_bytes_ready = 0;
-static uint16_t music_wait_ticks = 0;
-static bool music_error_state = false;
-static bool music_just_looped = false;
-static bool music_paused = false;
-
 #define MUSIC_BUF_SIZE 512u
 #define MUSIC_MAX_BGM_CH 8u
 #define MUSIC_EVENTS_PER_FRAME_BUDGET 64u
 
-static bool music_is_bgm_slot(uint8_t slot_offset) {
+// One instance of this drives the main gameplay music (channels 0-8,
+// never stops); a second, completely independent instance drives the
+// reserved SFX channel (5 only) -- an ambient loop (ready via
+// player_open's loop=true) that one-shot event stingers (loop=false)
+// temporarily take over from, then hand back to. Pulling this out of
+// what used to be a single hardcoded set of music_* statics is what
+// makes a second independent stream possible without duplicating the
+// buffered-read/tick/tempo-scale logic.
+typedef struct {
+    int fd;
+    uint8_t buffer[MUSIC_BUF_SIZE];
+    uint16_t buf_idx;
+    uint16_t bytes_ready;
+    uint16_t wait_ticks;
+    bool error_state;
+    bool just_looped;
+    bool paused;
+    bool loop;   // false: stop (don't wrap) at the 0xFF,0xFF end marker
+    bool ended;  // true once a non-looping player has hit its end marker
+    uint16_t tempo_scale; // 256 = 1.0x; see music_init's comment
+    uint16_t tempo_acc;
+} music_player_t;
+
+static music_player_t s_music_player = { .fd = -1 };
+static music_player_t s_sfx_player = { .fd = -1 };
+
+static bool player_is_bgm_slot(uint8_t slot_offset) {
     switch (slot_offset) {
         case 0x00: case 0x01: case 0x02:
         case 0x03: case 0x04: case 0x05:
@@ -177,103 +194,89 @@ static bool music_is_bgm_slot(uint8_t slot_offset) {
     }
 }
 
-static bool music_reg_allowed(uint8_t reg) {
-    if (reg >= 0xA0 && reg <= 0xA8) return (uint8_t)(reg - 0xA0) <= MUSIC_MAX_BGM_CH;
-    if (reg >= 0xB0 && reg <= 0xB8) return (uint8_t)(reg - 0xB0) <= MUSIC_MAX_BGM_CH;
-    if (reg >= 0xC0 && reg <= 0xC8) return (uint8_t)(reg - 0xC0) <= MUSIC_MAX_BGM_CH;
+// min_ch/max_ch restrict the direct per-channel registers (freq/keyon/
+// feedback, where channel = reg - base is trivial) to the range this
+// player is allowed to touch -- 0-8 for the main player, 5-5 for the SFX
+// player, so a stray write from one stream can never land on a channel
+// the other stream owns. The operator registers (0x20-0xF5) aren't
+// independently channel-checked here (that needs a reverse offset->
+// channel lookup this doesn't have) -- relying instead on generation-time
+// guarantees that SFX tracks only ever contain channel-5 operator writes
+// (opl2_translate.py's sfx profile never emits anything else, confirmed
+// by inspecting every generated SFX track's actual register list).
+static bool player_reg_allowed(uint8_t reg, uint8_t min_ch, uint8_t max_ch) {
+    if (reg >= 0xA0 && reg <= 0xA8) { uint8_t ch = reg - 0xA0; return ch >= min_ch && ch <= max_ch; }
+    if (reg >= 0xB0 && reg <= 0xB8) { uint8_t ch = reg - 0xB0; return ch >= min_ch && ch <= max_ch; }
+    if (reg >= 0xC0 && reg <= 0xC8) { uint8_t ch = reg - 0xC0; return ch >= min_ch && ch <= max_ch; }
 
     if ((reg >= 0x20 && reg <= 0x35) ||
         (reg >= 0x40 && reg <= 0x55) ||
         (reg >= 0x60 && reg <= 0x75) ||
         (reg >= 0x80 && reg <= 0x95) ||
         (reg >= 0xE0 && reg <= 0xF5)) {
-        return music_is_bgm_slot(reg & 0x1F);
+        return player_is_bgm_slot(reg & 0x1F);
     }
 
     return true;
 }
 
-static bool music_refill_buffer(void) {
-    int res = read(music_fd, music_buffer, MUSIC_BUF_SIZE);
+static bool player_refill_buffer(music_player_t *p) {
+    int res = read(p->fd, p->buffer, MUSIC_BUF_SIZE);
     if (res < 0) {
-        music_error_state = true;
+        p->error_state = true;
         return false;
     }
-    music_buf_idx = 0;
-    music_bytes_ready = (uint16_t)res;
+    p->buf_idx = 0;
+    p->bytes_ready = (uint16_t)res;
     return true;
 }
 
-static uint16_t s_music_tempo_scale = 1024; // 256 = 1.0x; all current music .BIN assets run at quarter-frame (~240Hz) resolution, 4x the native tick rate, so 1024 (4.0x) is the real default
-static uint16_t s_tempo_acc = 0;
+// loop=true: wrap back to the start at the 0xFF,0xFF end marker forever
+// (gameplay music, SFX-channel ambient loops). loop=false: stop there and
+// set p->ended (one-shot event stingers) so the caller can fall back to
+// whatever should play next.
+static void player_open(music_player_t *p, const char *filename, bool loop) {
+    if (p->fd >= 0) close(p->fd);
+    p->fd = open(filename, O_RDONLY);
 
-void music_set_tempo_scale(uint16_t scale_256) {
-    s_music_tempo_scale = scale_256;
+    p->buf_idx = 0;
+    p->bytes_ready = 0;
+    p->wait_ticks = 0;
+    p->just_looped = false;
+    p->paused = false;
+    p->loop = loop;
+    p->ended = false;
+    p->error_state = (p->fd < 0);
+    p->tempo_scale = 1024; // Default to 4.0x -- see music_init's comment
+    p->tempo_acc = 0;
+
+    if (p->error_state) return;
+    player_refill_buffer(p);
 }
 
-void music_init(const char* filename) {
-    if (music_fd >= 0) close(music_fd);
-    music_fd = open(filename, O_RDONLY);
-
-    music_buf_idx = 0;
-    music_bytes_ready = 0;
-    music_wait_ticks = 0;
-    music_just_looped = false;
-    music_paused = false;
-    music_error_state = (music_fd < 0);
-    s_music_tempo_scale = 1024; // Default to 4.0x -- see declaration above
-    s_tempo_acc = 0;
-
-    // Re-initialize OPL registers to clear lingering patches and key-on states from previous songs
-    opl_init();
-
-    if (music_error_state) {
-        return;
+static void player_stop(music_player_t *p) {
+    if (p->fd >= 0) {
+        close(p->fd);
+        p->fd = -1;
     }
-
-    if (!music_refill_buffer()) {
-        return;
-    }
+    p->buf_idx = 0;
+    p->bytes_ready = 0;
+    p->wait_ticks = 0;
+    p->just_looped = false;
+    p->error_state = false;
+    p->paused = false;
+    p->ended = false;
+    p->tempo_scale = 1024;
+    p->tempo_acc = 0;
 }
 
-void music_stop(void) {
-    if (music_fd >= 0) {
-        close(music_fd);
-        music_fd = -1;
-    }
-    music_buf_idx = 0;
-    music_bytes_ready = 0;
-    music_wait_ticks = 0;
-    music_just_looped = false;
-    music_error_state = false;
-    music_paused = false;
-    s_music_tempo_scale = 1024;
-    s_tempo_acc = 0;
-    opl_init();
-}
-
-void music_pause(void) {
-    if (music_fd >= 0 && !music_error_state) {
-        music_paused = true;
-        for (uint8_t i = 0; i <= MUSIC_MAX_BGM_CH; i++) {
-            opl_write(0xB0 + i, 0x00);
-        }
-    }
-}
-
-void music_resume(void) {
-    if (music_fd >= 0 && !music_error_state) {
-        music_paused = false;
-    }
-}
-
-void update_music_advance(uint8_t ticks) {
-    if (music_paused || music_error_state || music_fd < 0) return;
+static void player_advance(music_player_t *p, uint8_t ticks, uint8_t min_ch, uint8_t max_ch) {
+    if (p->paused || p->error_state || p->fd < 0 || p->ended) return;
     if (ticks == 0u) ticks = 1u;
 
     uint16_t effective_ticks = ticks;
-    if (s_music_tempo_scale != 256) {
-        if (s_music_tempo_scale == 1024) {
+    if (p->tempo_scale != 256) {
+        if (p->tempo_scale == 1024) {
             // Common case (the current, and currently only, tempo
             // scale in use): an exact multiple of 256, so a shift
             // stands in for the general fixed-point multiply below --
@@ -282,20 +285,20 @@ void update_music_advance(uint8_t ticks) {
             // single frame for no benefit over `<< 2`.
             effective_ticks = (uint16_t)ticks << 2;
         } else {
-            s_tempo_acc += (uint16_t)ticks * s_music_tempo_scale;
-            effective_ticks = s_tempo_acc >> 8;
-            s_tempo_acc &= 0x00FF;
+            p->tempo_acc += (uint16_t)ticks * p->tempo_scale;
+            effective_ticks = p->tempo_acc >> 8;
+            p->tempo_acc &= 0x00FF;
         }
         if (effective_ticks == 0) return;
     }
 
-    if (music_wait_ticks > effective_ticks) {
-        music_wait_ticks -= effective_ticks;
+    if (p->wait_ticks > effective_ticks) {
+        p->wait_ticks -= effective_ticks;
     } else {
-        music_wait_ticks = 0;
+        p->wait_ticks = 0;
     }
 
-    if (music_wait_ticks == 0) {
+    if (p->wait_ticks == 0) {
         // Budget must scale with effective_ticks (the real number of .BIN
         // ticks being advanced this call), not the raw vsync-frame delta --
         // with a 4x tempo scale, 4 ticks' worth of events can legitimately
@@ -309,69 +312,167 @@ void update_music_advance(uint8_t ticks) {
         if (budget > 255u) budget = 255u;
 
         uint16_t events_processed = 0;
-        while (music_wait_ticks == 0 && events_processed < budget) {
-            if (music_buf_idx > music_bytes_ready ||
-                (uint16_t)(music_bytes_ready - music_buf_idx) < 4u) {
-                if (!music_refill_buffer()) {
+        while (p->wait_ticks == 0 && events_processed < budget) {
+            if (p->buf_idx > p->bytes_ready ||
+                (uint16_t)(p->bytes_ready - p->buf_idx) < 4u) {
+                if (!player_refill_buffer(p)) {
                     return;
                 }
-                if (music_bytes_ready == 0) {
-                    if (lseek(music_fd, 0, SEEK_SET) < 0) {
-                        music_error_state = true;
+                if (p->bytes_ready == 0) {
+                    if (!p->loop) {
+                        p->ended = true;
                         return;
                     }
-                    if (!music_refill_buffer()) {
+                    if (lseek(p->fd, 0, SEEK_SET) < 0) {
+                        p->error_state = true;
                         return;
                     }
-                    music_just_looped = true;
+                    if (!player_refill_buffer(p)) {
+                        return;
+                    }
+                    p->just_looped = true;
                     continue;
                 }
             }
 
-            uint8_t reg  = music_buffer[music_buf_idx++];
-            uint8_t val  = music_buffer[music_buf_idx++];
-            uint8_t d_lo = music_buffer[music_buf_idx++];
-            uint8_t d_hi = music_buffer[music_buf_idx++];
+            uint8_t reg  = p->buffer[p->buf_idx++];
+            uint8_t val  = p->buffer[p->buf_idx++];
+            uint8_t d_lo = p->buffer[p->buf_idx++];
+            uint8_t d_hi = p->buffer[p->buf_idx++];
             uint16_t delay = ((uint16_t)d_hi << 8) | d_lo;
             events_processed++;
 
-            if (music_just_looped &&
+            if (p->just_looped &&
                 reg >= 0xB0 && reg <= 0xB8 &&
                 (val & 0x20u) == 0u &&
                 delay <= 1u) {
-                music_just_looped = false;
+                p->just_looped = false;
                 continue;
             }
-            music_just_looped = false;
+            p->just_looped = false;
 
             if (reg == 0xFF && val == 0xFF) {
-                if (lseek(music_fd, 0, SEEK_SET) < 0) {
-                    music_error_state = true;
+                if (!p->loop) {
+                    p->ended = true;
                     return;
                 }
-                if (!music_refill_buffer()) {
+                if (lseek(p->fd, 0, SEEK_SET) < 0) {
+                    p->error_state = true;
                     return;
                 }
-                music_just_looped = true;
+                if (!player_refill_buffer(p)) {
+                    return;
+                }
+                p->just_looped = true;
                 continue;
             } else {
-                if (music_reg_allowed(reg)) {
+                if (player_reg_allowed(reg, min_ch, max_ch)) {
                     opl_write(reg, val);
                 }
             }
 
             if (delay > 0) {
-                music_wait_ticks = delay;
+                p->wait_ticks = delay;
             }
         }
 
         // Yield to the rest of the frame if a pathological stream keeps delay at zero.
-        if (music_wait_ticks == 0 && events_processed >= budget) {
-            music_wait_ticks = 1;
+        if (p->wait_ticks == 0 && events_processed >= budget) {
+            p->wait_ticks = 1;
         }
     }
 }
 
+void music_set_tempo_scale(uint16_t scale_256) {
+    s_music_player.tempo_scale = scale_256;
+}
+
+void music_init(const char* filename) {
+    player_open(&s_music_player, filename, true);
+    // Re-initialize OPL registers to clear lingering patches and key-on states from previous songs
+    opl_init();
+}
+
+void music_stop(void) {
+    player_stop(&s_music_player);
+    opl_init();
+}
+
+void music_pause(void) {
+    if (s_music_player.fd >= 0 && !s_music_player.error_state) {
+        s_music_player.paused = true;
+        for (uint8_t i = 0; i <= MUSIC_MAX_BGM_CH; i++) {
+            opl_write(0xB0 + i, 0x00);
+        }
+    }
+}
+
+void music_resume(void) {
+    if (s_music_player.fd >= 0 && !s_music_player.error_state) {
+        s_music_player.paused = false;
+    }
+}
+
+void update_music_advance(uint8_t ticks) {
+    player_advance(&s_music_player, ticks, 0, MUSIC_MAX_BGM_CH);
+}
+
 void update_music() {
     update_music_advance(1u);
+}
+
+// --- SFX channel (5): an ambient loop, temporarily interrupted by
+// one-shot event stingers, "newest always wins" -- a new trigger (either
+// sfx_play or a sfx_set_ambient that lands while nothing else is
+// playing) always immediately cuts off whatever's currently on the
+// channel. ---
+
+static const char *s_sfx_ambient_file = 0; // last-set ambient path, for fallback
+static bool s_sfx_is_oneshot = false;
+
+// Every switch on the SFX channel risks leaving a stuck note: a track can
+// end (or get cut off mid-playback by a newer trigger) with channel 5's
+// key-on bit still set, and nothing downstream ever clears it on its own
+// -- player_open() just starts reading a new file, it doesn't know
+// whether the channel it's about to reuse was mid-note. Silencing
+// channel 5 directly (not through OPL_NoteOff, which relies on
+// shadow_b0[] -- never updated by the raw .BIN playback path) before
+// every switch guarantees no held note ever survives a transition,
+// regardless of how the interrupted content happened to end.
+static void sfx_silence_channel(void) {
+    opl_write(0xB5, 0x00);
+}
+
+void sfx_set_ambient(const char *filename) {
+    s_sfx_ambient_file = filename;
+    if (!s_sfx_is_oneshot) {
+        sfx_silence_channel();
+        player_open(&s_sfx_player, filename, true);
+    }
+    // A one-shot is currently playing: just remember the new ambient: sfx
+    // channel's the update loop switches to it once the one-shot ends.
+}
+
+void sfx_play(const char *filename) {
+    s_sfx_is_oneshot = true;
+    sfx_silence_channel();
+    player_open(&s_sfx_player, filename, false);
+}
+
+void sfx_stop(void) {
+    player_stop(&s_sfx_player);
+    s_sfx_ambient_file = 0;
+    s_sfx_is_oneshot = false;
+    sfx_silence_channel();
+}
+
+void update_sfx_advance(uint8_t ticks) {
+    player_advance(&s_sfx_player, ticks, 5, 5);
+    if (s_sfx_is_oneshot && s_sfx_player.ended) {
+        s_sfx_is_oneshot = false;
+        sfx_silence_channel();
+        if (s_sfx_ambient_file) {
+            player_open(&s_sfx_player, s_sfx_ambient_file, true);
+        }
+    }
 }
