@@ -7,6 +7,7 @@
 #include "tile_mode2.h"
 #include "prizes.h"
 #include "ghost.h"
+#include "opl.h"
 
 static int8_t queued_dir = DIR_NONE;
 
@@ -150,6 +151,7 @@ void add_player_score(uint32_t pts) {
         player.lives++;
         update_player_lives_display(player.lives);
         trigger_extra_life_blink();
+        sfx_play("ROM:sfxextralife");
         s_next_extra_life_threshold += 20000;
     }
 }
@@ -183,6 +185,13 @@ static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
         RIA.addr0 = MAZE_MAP_DATA + offset;
         RIA.step0 = 1;
         RIA.rw0 = 0;
+
+        // Only a regular dot gets the chomp stinger -- eating a power
+        // pellet already gets its own, bigger audible cue when the
+        // frightened ambient loop takes over the SFX channel.
+        if (tile_index == 116) {
+            sfx_play("ROM:sfxpellet");
+        }
 
         uint32_t dot_pts = get_current_dot_value(player.pellets_eaten);
         player.pellets_eaten++;
