@@ -74,21 +74,26 @@ class VoiceState:
     active: bool = False
     fnum_hi: int = 0
     tl: int = -1
-    owner: int = -1       # logical melodic source currently assigned to this physical channel, -1 = free
-    last_tick: int = 0    # row tick this channel was last (re)triggered, for voice-steal aging
 
 
-# Pattern-channel indices (tools/import_nsf.py's RPT4 layout) for the five
-# melodic NES/N163 lanes. One physical channel per lane (5 lanes, 5
-# channels) -- measured on track 0: all 5 lanes are simultaneously active in
-# 21.5% of rows and 4+ in 49.8%, so a smaller shared pool would mean
-# frequent audible voice-stealing, not a rare edge case. acquire_channel's
-# stealing logic stays in place as a safety net (it should now never
-# actually need to fire for this track set, since demand never exceeds
-# pool size), not as the primary allocation strategy.
-LOGICAL_MELODIC_SOURCES = [0, 1, 2, 5, 6]  # sq1, sq2, tri, n163_0, n163_1
+# Fixed 1:1 mapping from logical melodic source to physical OPL2 channel.
+# Five melodic NES/N163 lanes, five channels -- measured on track 0: all 5
+# lanes are simultaneously active in 21.5% of rows and 4+ in 49.8%, so with
+# one channel per source there's never any contention to resolve. An
+# earlier version routed this through a dynamic acquire/steal pool "as a
+# safety net"; with the pool sized to exactly match the source count, that
+# net never had anything to catch -- every source keeps the same channel
+# for the whole track, so there was nothing to steal and no reason to
+# route a fixed mapping through machinery built for a variable one.
+MELODIC_CHANNEL_BY_SOURCE = {
+    0: 0,  # sq1
+    1: 1,  # sq2
+    2: 2,  # tri
+    5: 3,  # n163_0
+    6: 4,  # n163_1
+}
 
-# source id -> (NSFConverter.build_frame_history() key, instrument patch id)
+# source id -> (NSFConverter.build_subframe_history() key, instrument patch id)
 MELODIC_SOURCE_INFO = {
     0: ('sq1', 80),
     1: ('sq2', 81),
@@ -96,11 +101,41 @@ MELODIC_SOURCE_INFO = {
     5: ('n163_0', 38),
     6: ('n163_1', 39),
 }
-MELODIC_POOL = [0, 1, 2, 3, 4]             # physical channels shared by the above
 
-# Physical channel 5 is intentionally left unused here: it's the budget
-# reserved for future interactive SFX (eating pellets, ghosts, dying).
+# Physical channel 5 is intentionally left unused in the standard mapping:
+# it's the budget reserved for future interactive SFX (eating pellets,
+# ghosts, dying), which only ever needs one channel on top of whatever
+# gameplay music is already using channels 0-4 -- confirmed by a direct
+# census of every SFX track in the NSF, none of which need more than one
+# simultaneous melodic voice alongside noise.
 SFX_RESERVED_CHANNELS = [5]
+
+# Wide profile: for tracks that never play concurrently with gameplay
+# music or interactive SFX (high scores, results, options menu -- NSF
+# tracks 3/5/7, confirmed by direct census), there's nothing else that
+# needs channel 5, and no reason to hold it back. These three tracks also
+# use up to 4 simultaneous N163 channels rather than 2 -- also confirmed
+# by census, and previously silently dropped since the decoder only ever
+# exposed n163_0/n163_1. None of them use the triangle channel at all, so
+# it's dropped from this profile rather than given a channel two other
+# tracks are already using: sq1, sq2, and all 4 N163 lanes fit exactly
+# into the 6 channels (0-5) this profile has to work with.
+MELODIC_CHANNEL_BY_SOURCE_WIDE = {
+    0: 0,  # sq1
+    1: 1,  # sq2
+    5: 2,  # n163_0
+    6: 3,  # n163_1
+    7: 4,  # n163_2
+    8: 5,  # n163_3
+}
+MELODIC_SOURCE_INFO_WIDE = {
+    0: ('sq1', 80),
+    1: ('sq2', 81),
+    5: ('n163_0', 38),
+    6: ('n163_1', 39),
+    7: ('n163_2', 38),
+    8: ('n163_3', 39),
+}
 
 # Physical channels 6-8 are dedicated to real OPL2 rhythm mode (register
 # 0xBD) instead of faking percussion with ordinary 2-op FM voices. This is
@@ -122,7 +157,11 @@ RYT_HH = 0x01
 # n163_0 (the first two voices) were dominating the mix, triangle (the
 # voice that follows) was getting buried under them, so sq1/n163_0 come
 # down and triangle's earlier heavy attenuation is mostly backed off.
-MIX_TRIM_BY_SOURCE = {0: 4, 2: 10, 5: 4, 6: 6}
+# n163_0/n163_1 trim eased by 3 (~2.25dB louder) on user feedback after
+# listening to the regenerated tracks -- n163_2/n163_3 (the wide-profile
+# tracks' extra N163 lanes, sharing patches 38/39 with n163_0/n163_1) get
+# the same trim as their patch-sharing counterpart for consistency.
+MIX_TRIM_BY_SOURCE = {0: 4, 2: 10, 5: 1, 6: 3, 7: 1, 8: 3}
 
 # Per-logical-source fine-tune in cents, added on top of the exact f-number
 # computation in midi_to_fnum (positive = sharper). Empty by default; this
@@ -132,16 +171,59 @@ MIX_TRIM_BY_SOURCE = {0: 4, 2: 10, 5: 4, 6: 6}
 # not a bug fix.
 FINE_TUNE_CENTS_BY_SOURCE: Dict[int, float] = {}
 
+# Triangle-only: bridge note<=0 gaps this short or shorter by holding the
+# previous note through them instead of gating off. Pac-Man CE's driver
+# gates the triangle's linear counter on/off in 1-3 quarter-frame-tick
+# (4-12ms) bursts starting at ~64s as a staccato/pulse articulation --
+# confirmed by tracing $4008 directly, not a decode artifact. Real NES
+# hardware freezes the triangle's phase in place when gated rather than
+# truly silencing it, so the audible effect is a fast pulse on a
+# continuous pitch, not discrete attacks. OPL2 has no such freeze: every
+# gate-off we emit as a real note-off/note-on retrigger cuts the envelope
+# before it can attack, which mutes the voice through exactly its busiest
+# passage. 3 ticks is a starting point (covers the observed 1-3 tick
+# gates while still letting a genuine multi-frame rest through) -- tune by
+# ear against a render if the busy passage still sounds swallowed.
+TRIANGLE_MIN_GATE_TICKS = 3
+
+
+def _bridge_short_gaps(notes_vols: list, max_gap_ticks: int) -> list:
+    """Bridge brief (note<=0) runs by holding the prior (note, vol) through them.
+
+    A run only passes through as a real rest if it's longer than
+    max_gap_ticks; anything shorter is replaced with whatever was sounding
+    right before it started. Leading gaps (nothing yet to hold) and gaps
+    longer than the threshold are left alone.
+    """
+    n = len(notes_vols)
+    out = list(notes_vols)
+    i = 0
+    while i < n:
+        note, _vol = out[i]
+        if note <= 0:
+            j = i
+            while j < n and out[j][0] <= 0:
+                j += 1
+            gap_len = j - i
+            if gap_len <= max_gap_ticks and i > 0 and out[i - 1][0] > 0:
+                prev = out[i - 1]
+                for k in range(i, j):
+                    out[k] = prev
+            i = j
+        else:
+            i += 1
+    return out
+
 
 class OPL2Translator:
     def __init__(self):
         self.voice_state: Dict[int, VoiceState] = {i: VoiceState() for i in range(9)}
         self.channel_ksl: Dict[int, int] = {i: 0 for i in range(9)}
-        self.logical_channel: Dict[int, int] = {s: -1 for s in LOGICAL_MELODIC_SOURCES}
         self.rhythm_reg = 0x00
         self.prev_noise_bit = 0
         self.prev_dmc_note = 0
         self.tick = 0
+        self.channel_map = MELODIC_CHANNEL_BY_SOURCE
         # Pac-Man CE leans toward a bright, punchy arcade synth: tight lead,
         # clipped bass, and dry support voices with little extra resonance.
         self.patch_bank: Dict[int, Dict[str, int]] = {
@@ -321,7 +403,10 @@ class OPL2Translator:
                   # In rhythm mode HH/SD are not FM-chained -- each operator
                   # is independently audible -- so *_ksl's TL directly sets
                   # each voice's own loudness.
-                  "m_ave": 0x02, "m_ksl": 0x02, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
+                  # Hi-hat TL nudged from 2 to 0 (its ceiling -- OPL2's TL=0
+                  # is max loudness) on user feedback; snare's carrier was
+                  # already at TL=0, no headroom left there.
+                  "m_ave": 0x02, "m_ksl": 0x00, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
                   "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x39, "c_wave": 0x00,
                   "feedback": 0x0C},
             # Tom's modulator (its only audible operator -- rhythm-mode
@@ -333,8 +418,11 @@ class OPL2Translator:
             # by spectral-envelope distance, commit bba7415) but reverted
             # alongside kick/n163 for the same "too clean" reason.
             255: {  # channel 8: modulator = tom-tom, carrier = top cymbal
-                  "m_ave": 0x01, "m_ksl": 0x02, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
-                  "c_ave": 0x02, "c_ksl": 0x02, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
+                  # Both operators' TL nudged from 2 to 0 (max loudness) on
+                  # user feedback -- same headroom-exhausted situation as
+                  # hi-hat above.
+                  "m_ave": 0x01, "m_ksl": 0x00, "m_atdec": 0xF9, "m_susrel": 0x48, "m_wave": 0x00,
+                  "c_ave": 0x02, "c_ksl": 0x00, "c_atdec": 0xF6, "c_susrel": 0x23, "c_wave": 0x00,
                   "feedback": 0x0C},
             # Inst 38 (N163 ch0, the low voice): user-directed swap to
             # RPTracker's gm_bank[0x18] (Nylon Guitar) after further review
@@ -632,48 +720,15 @@ class OPL2Translator:
         self.rhythm_reg = on_reg
         return events
 
-    def acquire_channel(self, source: int) -> tuple[int, List[OPL2Event]]:
-        """Return the physical channel for a melodic source, stealing if needed.
-
-        Prefers a genuinely free channel, then an idle one (still "owned" by
-        another source but not currently sounding a note -- reclaiming it is
-        inaudible). Only as a last resort -- all 4 channels actively
-        sounding at once -- does it steal, and purely by least-recently
-        triggered (not by TL/loudness: TL reflects intentional per-source
-        mix trims like the triangle's, so using it here would make any
-        deliberately-quieter voice the perpetual first victim, cutting it
-        off mid-note instead of just sitting back in the mix).
-        """
-        phys = self.logical_channel.get(source, -1)
-        if phys != -1:
-            return phys, []
-
-        idle = [p for p in MELODIC_POOL if not self.voice_state[p].active]
-        pool = idle if idle else MELODIC_POOL
-        phys = min(pool, key=lambda p: self.voice_state[p].last_tick)
-
-        events: List[OPL2Event] = []
-        old_owner = self.voice_state[phys].owner
-        if old_owner not in (-1, source):
-            if self.voice_state[phys].active:
-                events.extend(self.note_off(phys))
-            self.logical_channel[old_owner] = -1
-
-        self.logical_channel[source] = phys
-        self.voice_state[phys].owner = source
-        return phys, events
-
     def process_melodic(self, source: int, note: int, inst: int, vol: int) -> List[OPL2Event]:
         events: List[OPL2Event] = []
+        phys = self.channel_map[source]
 
         if note <= 0:
-            phys = self.logical_channel.get(source, -1)
-            if phys != -1 and self.voice_state[phys].active:
+            if self.voice_state[phys].active:
                 events.extend(self.note_off(phys))
             return events
 
-        phys, steal_events = self.acquire_channel(source)
-        events.extend(steal_events)
         state = self.voice_state[phys]
 
         patch_changed = state.patch != inst
@@ -691,19 +746,17 @@ class OPL2Translator:
         cents = FINE_TUNE_CENTS_BY_SOURCE.get(source, 0.0)
         if patch_changed or not state.active:
             events.extend(self.note_on(phys, note, cents))
-            state.last_tick = self.tick
         elif note_changed:
             # Same instrument, already sounding: glide instead of
             # retriggering, so a fast arpeggio doesn't click on every note.
             events.extend(self.note_glide(phys, note, cents))
-            state.last_tick = self.tick
 
         if patch_changed or note_changed or state.volume != vol or state.tl < 0:
             events.extend(self.volume_set(phys, vol, note, inst, source))
 
         return events
 
-    def translate_frame_history(self, history) -> List[OPL2Event]:
+    def translate_frame_history(self, history, wide: bool = False) -> List[OPL2Event]:
         """Build the OPL2 event stream directly from real 60Hz NSF frames.
 
         No row/pattern quantization: 1 history frame is 1 tick in the
@@ -715,26 +768,44 @@ class OPL2Translator:
         register writes when something actually changes; calling them once
         per real frame instead of once per artificially-widened row is all
         that's needed.
+
+        wide=True selects MELODIC_CHANNEL_BY_SOURCE_WIDE/
+        MELODIC_SOURCE_INFO_WIDE instead of the standard profile -- for
+        tracks 3/5/7 specifically, which never play concurrently with
+        gameplay music or SFX and need up to 4 simultaneous N163 channels
+        rather than 2 (see those constants' comments).
         """
         # Fully self-contained: reset all per-translation state here so a
         # translator instance can safely be reused across tracks or not.
         self.voice_state = {i: VoiceState() for i in range(9)}
         self.channel_ksl = {i: 0 for i in range(9)}
-        self.logical_channel = {s: -1 for s in LOGICAL_MELODIC_SOURCES}
         self.prev_noise_bit = 0
         self.prev_dmc_note = 0
         self.tick = 0
+        self.channel_map = MELODIC_CHANNEL_BY_SOURCE_WIDE if wide else MELODIC_CHANNEL_BY_SOURCE
+        source_info = MELODIC_SOURCE_INFO_WIDE if wide else MELODIC_SOURCE_INFO
 
         out: List[OPL2Event] = []
         out.extend(self.rhythm_setup())
         last_index = 0  # frame index the most recent emitted batch corresponds to
 
+        # See TRIANGLE_MIN_GATE_TICKS: the driver gates triangle's linear
+        # counter in bursts too short for OPL2's envelope to attack in, so
+        # this pre-pass bridges the short gaps before process_melodic ever
+        # sees them, rather than trying to react to them tick by tick. The
+        # wide profile never includes triangle (see MELODIC_SOURCE_INFO_WIDE),
+        # so skip this entirely when it's not in play.
+        tri_bridged = None
+        if 2 in source_info:
+            tri_gated = [frame['tri'] for frame in history]
+            tri_bridged = _bridge_short_gaps(tri_gated, TRIANGLE_MIN_GATE_TICKS)
+
         for i, frame in enumerate(history):
             self.tick += 1
             frame_events: List[OPL2Event] = []
 
-            for source, (hist_key, inst) in MELODIC_SOURCE_INFO.items():
-                note, vol = frame[hist_key]
+            for source, (hist_key, inst) in source_info.items():
+                note, vol = tri_bridged[i] if (source == 2 and tri_bridged is not None) else frame[hist_key]
                 frame_events.extend(self.process_melodic(source, note, inst, vol))
 
             frame_events.extend(self.process_rhythm(frame['noise'][0], frame['dmc'][0]))
@@ -761,13 +832,20 @@ class OPL2Translator:
         return out
 
 
+# Tracks that never play concurrently with gameplay music or interactive
+# SFX (high scores, results, options menu), so they get the wide channel
+# profile instead of the standard one -- see MELODIC_CHANNEL_BY_SOURCE_WIDE.
+WIDE_TRACK_INDICES = {3, 5, 7}
+
+
 def translate_nsf_track(nsf_path: str, track_idx: int = 0, loops: int = 1) -> List[OPL2Event]:
     converter = NSFConverter(nsf_path)
     history = converter.build_subframe_history(track_idx)
     translator = OPL2Translator()
+    wide = track_idx in WIDE_TRACK_INDICES
     events: List[OPL2Event] = []
     for _ in range(max(1, loops)):
-        events.extend(translator.translate_frame_history(history))
+        events.extend(translator.translate_frame_history(history, wide=wide))
     return events
 
 
@@ -779,7 +857,7 @@ def export_all_tracks(nsf_path: str, output_dir: str) -> List[str]:
 
     for track_idx in range(converter.total_songs):
         history = converter.build_subframe_history(track_idx)
-        events = translator.translate_frame_history(history)
+        events = translator.translate_frame_history(history, wide=track_idx in WIDE_TRACK_INDICES)
         out_path = os.path.join(output_dir, f"track_{track_idx:02d}.json")
         with open(out_path, "w", encoding="utf-8") as fh:
             json.dump([e.to_tuple() for e in events], fh, separators=(",", ":"))

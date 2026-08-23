@@ -625,8 +625,16 @@ class NSFConverter:
                     if 20 <= freq <= 12000:
                         mnote = normalize_midi_note(int(round(12.0 * math.log2(freq / 440.0) + 69)))
                         n163_active_notes.append((mnote, vol))
-            n163_0_note, n163_0_vol = n163_active_notes[0] if len(n163_active_notes) > 0 else (0, 0)
-            n163_1_note, n163_1_vol = n163_active_notes[1] if len(n163_active_notes) > 1 else (0, 0)
+            # Up to 4 simultaneous N163 channels are genuinely used across
+            # the full track set (tracks 3/5/7 -- confirmed by scanning
+            # every track's num_n163/active-channel-count directly), even
+            # though track 0 never exceeds 2. Exposing all 4 unconditionally
+            # keeps this decode path track-agnostic; it's each track's own
+            # translation that decides how many it actually needs.
+            n163_notes = [
+                n163_active_notes[i] if i < len(n163_active_notes) else (0, 0)
+                for i in range(4)
+            ]
 
             # Four real quarter-frame clocks per PLAY call. Half-frame
             # (length counter) clocks land on sub-ticks 1 and 3 -- an
@@ -671,8 +679,10 @@ class NSFConverter:
                     'tri': (tri_note, 15 if tri_note else 0),
                     'noise': (noise_note, noise_vol),
                     'dmc': (dmc_note, 15 if dmc_note else 0),
-                    'n163_0': (n163_0_note, n163_0_vol),
-                    'n163_1': (n163_1_note, n163_1_vol),
+                    'n163_0': n163_notes[0],
+                    'n163_1': n163_notes[1],
+                    'n163_2': n163_notes[2],
+                    'n163_3': n163_notes[3],
                 })
 
         return history
