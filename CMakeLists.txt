@@ -20,9 +20,9 @@ rp6502_asset(RPPacMan 0x1D970 images/title_map.bin)
 rp6502_asset(RPPacMan 0x1DE20 images/Titles_RP6502_4bpp.bin)
 
 # Music assets
-rp6502_asset(RPPacMan pacman01 music/PACMAN01.BIN)
-rp6502_asset(RPPacMan pacman02 music/PACMAN02.BIN)
-rp6502_asset(RPPacMan pacman03 music/PacManCE_01.BIN)
+rp6502_asset(RPPacMan pacman01 music/tracks/PacManCE_01.BIN) #Game start jingle PacManCE_01.BIN
+rp6502_asset(RPPacMan pacman02 music/tracks/PacManCE_02.BIN) #Title screen music PacManCE_02.BIN
+rp6502_asset(RPPacMan pacman03 music/tracks/PacManCE_00.BIN) #Normal game music PacManCE_00.BIN
 
 rp6502_executable(RPPacMan DATA default RESET default)
 
