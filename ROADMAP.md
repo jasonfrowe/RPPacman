@@ -1,7 +1,7 @@
 # RPPacMan Roadmap
 
 Updated: 2026-08-23
-Branch: NFS-Music-Take2
+Branch: gameplay-sfx-tuning (forked from main after the NFS-Music-Take2 merge)
 
 Big-picture task list for finishing Pac-Man CE beyond the music work tracked
 in `Plan.md` (which stays scoped to the NSF->OPL2 translation effort). We are
@@ -12,21 +12,19 @@ close to a complete game loop for Normal mode; this is what's left.
 Playable end-to-end (title -> menu -> maze -> game over -> title). Missing
 before it's "done":
 
-### i. Sound effects in Normal mode
+### i. Sound effects in Normal mode -- DONE
 
-Not yet wired up. `tools/opl2_translate.py` reserves OPL2 channel 5
-specifically for this (`SFX_RESERVED_CHANNELS`), confirmed correctly sized
-by a direct census of every effect track in the NSF: none ever need more
-than one simultaneous melodic voice on top of `noise` (which goes through
-the rhythm channels, not channel 5). Candidate tracks, from listening
-(`music/tracks/PacManCE_08.BIN` through `_21.BIN`, see the per-track notes
-below) -- pellet eat, prize eat + maze transition, prize spawn, ghost
-eaten/vulnerable, Pac-Man death, extra life jingle, and the four short
-slide effects (08/09/10/13/15, likely level-transition/UI stingers).
-Needs: a small SFX-trigger API in `src/opl.c` (write channel 5 directly,
-independent of the currently-playing music track's own channels 0-4/6-8),
-and call sites wired into the actual game events in `src/player.c`/
-`src/ghost.c`/`src/prizes.c`.
+Wired up. `sfx_set_ambient`/`sfx_play`/`sfx_stop`/`update_sfx_advance` in
+`src/opl.c` drive OPL2 channel 5 as a fully independent lane alongside the
+always-playing gameplay music: an ambient loop (frightened or normal, track
+20/21) plays by default, with one-shot stingers (12=death, 13=pellet,
+15=ghost-eaten, 16=maze-update, 18=prize-placed, 19=extra-life) cutting in
+and automatically falling back to the current ambient when they finish.
+Call sites live in `src/player.c` (pellet/extra-life), `src/ghost.c`
+(death/ghost-eaten/frightened-ambient-swap), and `src/prizes.c`
+(maze-update/prize-placed). Tracks 8-11/17 (the short slide/bleep effects)
+were not wired to a specific gameplay event -- still candidates for the
+Sound Test screen (ii-e) rather than an automatic trigger.
 
 ### ii. OPTIONS menu
 
@@ -53,17 +51,16 @@ in `src/main.c`) but OPTIONS itself has no submenu yet. Sub-items:
 
 Needs extra maps built first (blocked on map/asset work, not audio).
 
-### iv. Palette swap synced to kick-drum
+### iv. Palette swap synced to kick-drum -- DONE
 
-Palette-cycling already exists (`tile_mode2_palette_update`); this asks for
-it to be *driven* by the currently-playing track's kick-drum hits rather
-than a fixed frame-based cycle. Two ways to detect a kick hit at runtime:
-(a) have `src/opl.c` flag when it writes the rhythm bass-drum bit (`0xBD`
-with `RYT_BD` set) and expose that to the render loop, or (b) precompute
-kick-hit timestamps at generation time in `opl2_translate.py` and ship them
-as a side table. (a) is simpler and stays correct if a track is ever
-regenerated; (b) avoids touching the audio driver's hot path. Lean (a)
-unless profiling says otherwise.
+Built via option (a): `opl_consume_kick_hit()` in `src/opl.c` flags a
+rising edge on rhythm register `0xBD`'s bass-drum bit, consumed once per
+frame by `tile_mode2_palette_update()`. Palette index 11 mirrors index 6's
+current color for 8 frames after each real kick, otherwise black. Also
+added, same session: a frightened-mode swap (`set_frightened_palette()` in
+`src/tile_mode2.c`) where index 6 -> index 2's color and index 8 -> index
+3's color while ghosts are vulnerable, reverting on expiry or Pac-Man
+death (wired from `src/ghost.c`).
 
 ### v. Game-over -> Results transition
 
@@ -165,9 +162,11 @@ once regenerated.
 
 ## Immediate next steps
 
-1. Finish regenerating all 22 tracks with the current translator (in
-   progress as of this writing) and listen through each, especially 04 and
-   07.
-2. Wire SFX channel 5 into actual gameplay events (i).
-3. Build the OPTIONS submenu shell (ii), starting with Sound Test since it
-   forces every track to actually be reachable in-game.
+1. Build the OPTIONS submenu shell (ii), starting with Sound Test since it
+   forces every track to actually be reachable in-game (including 03/04/05/
+   07's wide-profile tracks and the un-triggered 08-11/17 stingers, none of
+   which are reachable in-game yet).
+2. Extra mode (iii) -- blocked on new maps/assets, not audio.
+3. Game-over -> Results -> Ranking screens (v-vii) -- needs a persistence
+   story first (also blocks ii-a/ii-b), then the new title-state-machine
+   states and the score-sampling/histogram renderer.
