@@ -731,6 +731,67 @@ static void force_ghost_home(uint8_t i) {
     }
 }
 
+// General, mode-agnostic safety net layered on top of the tile-value
+// check below (not a replacement for it): every PROGRESS_CHECK_FRAMES,
+// compare each outside ghost's position against a snapshot from the
+// start of that window. Real net movement (folded across both wrap
+// seams, so a legitimate tunnel crossing never false-positives) below
+// PROGRESS_MIN_DISTANCE_PX means it's stuck by definition, regardless of
+// *why* -- oscillating between two tiles, embedded in geometry that
+// reads as "safe" by tile value but isn't a real path, or anything else
+// not specifically anticipated. Runs for every mode including
+// GHOST_MODE_EATEN, since that's the mode that's proven hardest to fully
+// rescue any other way (re-reported after the horizontal-tunnel fix, so
+// that fix alone wasn't sufficient -- this is the user-requested
+// time-based fallback).
+#define PROGRESS_CHECK_FRAMES 90
+#define PROGRESS_MIN_DISTANCE_PX 12
+
+static int16_t s_progress_px[NGHOSTS];
+static int16_t s_progress_py[NGHOSTS];
+static uint8_t s_progress_timer[NGHOSTS];
+
+static void check_ghost_progress_watchdog(void) {
+    for (int i = 0; i < NGHOSTS; i++) {
+        ghost_struct *g = &ghosts[i];
+        if (g->in_house || g->state != GHOST_STATE_OUTSIDE) {
+            s_progress_timer[i] = 0;
+            continue;
+        }
+
+        if (s_progress_timer[i] == 0) {
+            s_progress_px[i] = g->world_px;
+            s_progress_py[i] = g->world_py;
+            s_progress_timer[i] = PROGRESS_CHECK_FRAMES;
+            continue;
+        }
+
+        s_progress_timer[i]--;
+        if (s_progress_timer[i] > 0) continue;
+
+        int16_t diff_x = g->world_px - s_progress_px[i];
+        int16_t diff_y = g->world_py - s_progress_py[i];
+        // Fold both wrap seams (horizontal tunnel: WORLD_WIDTH; vertical
+        // tunnel: 184px loop) so a real crossing during the window never
+        // reads as "no progress."
+        if (diff_x > (WORLD_WIDTH / 2)) diff_x -= WORLD_WIDTH;
+        else if (diff_x < -(WORLD_WIDTH / 2)) diff_x += WORLD_WIDTH;
+        if (diff_y > (184 / 2)) diff_y -= 184;
+        else if (diff_y < -(184 / 2)) diff_y += 184;
+
+        int16_t abs_dx = (diff_x < 0) ? -diff_x : diff_x;
+        int16_t abs_dy = (diff_y < 0) ? -diff_y : diff_y;
+
+        if (abs_dx < PROGRESS_MIN_DISTANCE_PX && abs_dy < PROGRESS_MIN_DISTANCE_PX) {
+            force_ghost_home((uint8_t)i);
+        }
+
+        s_progress_px[i] = g->world_px;
+        s_progress_py[i] = g->world_py;
+        s_progress_timer[i] = PROGRESS_CHECK_FRAMES;
+    }
+}
+
 void check_and_reset_stuck_ghosts(void) {
     for (int i = 0; i < NGHOSTS; i++) {
         ghost_struct *g = &ghosts[i];
@@ -1216,6 +1277,7 @@ void ghost_update_motion(void) {
     // the nearest open tile. Only acts on ghosts already confirmed stuck,
     // so safe to run unconditionally every frame.
     check_and_reset_stuck_ghosts();
+    check_ghost_progress_watchdog();
 
     // --- 2. Manage Ghost Exit Eligibility & Progression ---
     if (s_game_motion_started) {
