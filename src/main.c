@@ -10,10 +10,12 @@
 #include "prizes.h"
 #include "opl.h"
 #include "title_anim.h"
+#include "results.h"
 
 typedef enum {
     STATE_TITLE,
-    STATE_GAMEPLAY
+    STATE_GAMEPLAY,
+    STATE_RESULTS
 } game_state_t;
 
 typedef enum {
@@ -117,6 +119,19 @@ void start_warm_title_screen(void) {
     reset_prizes_and_mazes_level();
 }
 
+void start_results_screen(void) {
+    s_game_state = STATE_RESULTS;
+    s_game_bgm_playing = false;
+
+    music_stop();
+    sfx_stop();
+    hide_all_ghosts();
+    set_pacman_cursor_hidden();
+    reset_prizes_and_mazes_level();
+
+    results_init();
+}
+
 void start_normal_game(void) {
     s_game_state = STATE_GAMEPLAY;
     s_game_bgm_playing = false;
@@ -146,6 +161,10 @@ void start_normal_game(void) {
     player.x_pos_px = (int16_t)((SCREEN_WIDTH - SPRITE_SIZE_PX) / 2);
     player.y_pos_px = player.world_py - 3;
     player.score = 0;
+    player.score_by_cat[SCORE_CAT_PELLET] = 0;
+    player.score_by_cat[SCORE_CAT_PRIZE] = 0;
+    player.score_by_cat[SCORE_CAT_GHOST] = 0;
+    reset_score_history();
     player.pellets_eaten = 0;
     player.lives = 3;
     player.dir = DIR_NONE;
@@ -392,6 +411,10 @@ int main(void)
                         player.x_pos_px = (int16_t)((SCREEN_WIDTH - SPRITE_SIZE_PX) / 2);
                         player.y_pos_px = player.world_py - 3;
                         player.score = 0;
+                        player.score_by_cat[SCORE_CAT_PELLET] = 0;
+                        player.score_by_cat[SCORE_CAT_PRIZE] = 0;
+                        player.score_by_cat[SCORE_CAT_GHOST] = 0;
+                        reset_score_history();
                         player.pellets_eaten = 0;
                         player.lives = 3;
                         player.dir = DIR_NONE;
@@ -523,7 +546,7 @@ int main(void)
             }
 
             hide_all_ghosts();
-        } else {
+        } else if (s_game_state == STATE_GAMEPLAY) {
             // 2. STATE_GAMEPLAY Updates
             player_update_motion(&actions);
             ghost_update_motion();
@@ -541,12 +564,14 @@ int main(void)
             }
 
             if (is_game_timer_expired()) {
-                // 5 minute timer expired -> End game and return to Title Screen
-                start_warm_title_screen();
+                // 5 minute timer expired -> End game, show results screen
+                start_results_screen();
             } else {
                 // Update maze palette animation
                 tile_mode2_palette_update(frame);
             }
+        } else { // STATE_RESULTS
+            results_update(press_start);
         }
 
         frame++;

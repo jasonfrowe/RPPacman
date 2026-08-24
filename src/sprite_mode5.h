@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "player.h" // SCORE_CAT_COUNT, used by player_struct below
 
 typedef struct {
     int16_t x_pos_px;
@@ -40,6 +41,7 @@ typedef struct {
     int8_t lives;
     int8_t dir; // Direction: 0=left, 1=right, 2=up, 3=down
     uint32_t score;
+    uint32_t score_by_cat[SCORE_CAT_COUNT]; // pellets / prizes / ghosts running totals
     uint16_t pellets_eaten;
 } player_struct;
 

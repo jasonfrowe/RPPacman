@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <string.h>
 #include "opl.h"
 
 // F-number table for one octave at block 4, indexed starting at Bb (not C):
@@ -163,6 +164,7 @@ void OPL_Config(uint8_t enable, uint16_t addr) {
 // buffered-read/tick/tempo-scale logic.
 typedef struct {
     int fd;
+    const char *filename; // currently-open ROM: path, to detect same-file reopens
     uint8_t buffer[MUSIC_BUF_SIZE];
     uint16_t buf_idx;
     uint16_t bytes_ready;
@@ -236,8 +238,43 @@ static bool player_refill_buffer(music_player_t *p) {
 // set p->ended (one-shot event stingers) so the caller can fall back to
 // whatever should play next.
 static void player_open(music_player_t *p, const char *filename, bool loop) {
+    // Reopening the exact same file that's already active -- most
+    // commonly "ROM:sfxpellet", retriggered on every single dot eaten,
+    // easily several times a second -- is both wasteful and, on real
+    // hardware, appears to occasionally leave the SFX channel silenced:
+    // close()+open() churn on the same small file many times a second
+    // hits a transient failure on the real SD-card-backed filesystem that
+    // the emulator's much faster/idealized file I/O never reproduces.
+    // Restarting via a plain seek avoids that open()/close() churn
+    // entirely for this, by far the most common, retrigger case.
+    if (p->fd >= 0 && p->filename && strcmp(p->filename, filename) == 0) {
+        if (lseek(p->fd, 0, SEEK_SET) >= 0) {
+            p->buf_idx = 0;
+            p->bytes_ready = 0;
+            p->wait_ticks = 0;
+            p->just_looped = false;
+            p->paused = false;
+            p->loop = loop;
+            p->ended = false;
+            p->error_state = false;
+            p->tempo_scale = 1024; // Default to 4.0x -- see music_init's comment
+            p->tempo_acc = 0;
+            player_refill_buffer(p);
+            return;
+        }
+        // Seek failed -- fall through to a full close+reopen below.
+    }
+
     if (p->fd >= 0) close(p->fd);
     p->fd = open(filename, O_RDONLY);
+    if (p->fd < 0) {
+        // A fresh open() has also been observed to fail transiently on
+        // real hardware; one retry recovers from that instead of
+        // permanently latching error_state (silent until some later,
+        // unrelated trigger happens to call player_open() again).
+        p->fd = open(filename, O_RDONLY);
+    }
+    p->filename = filename;
 
     p->buf_idx = 0;
     p->bytes_ready = 0;
@@ -259,6 +296,7 @@ static void player_stop(music_player_t *p) {
         close(p->fd);
         p->fd = -1;
     }
+    p->filename = 0;
     p->buf_idx = 0;
     p->bytes_ready = 0;
     p->wait_ticks = 0;

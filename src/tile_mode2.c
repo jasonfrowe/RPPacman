@@ -527,6 +527,14 @@ bool is_game_timer_expired(void) {
     return (s_game_timer_frames == 0);
 }
 
+// Elapsed gameplay frames since reset_game_timer(), for the results
+// screen's 10-second history buckets -- the 5-minute cap means this
+// never exceeds 18000, which lines up exactly with 30 buckets of 600
+// frames (10s) each.
+uint16_t get_game_elapsed_frames(void) {
+    return 18000 - s_game_timer_frames;
+}
+
 void update_game_timer_display(void) {
     if (s_game_timer_frames > 0 && is_game_motion_started()) {
         s_game_timer_frames--;

@@ -435,7 +435,19 @@ class OPL2Translator:
                   # Hi-hat TL nudged from 2 to 0 (its ceiling -- OPL2's TL=0
                   # is max loudness) on user feedback; snare's carrier was
                   # already at TL=0, no headroom left there.
-                  "m_ave": 0x02, "m_ksl": 0x00, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
+                  # Reported as "terrible clicking throughout the song" in
+                  # PacManCE_00.BIN. No better patch exists to swap in --
+                  # confirmed via git history (commit bba7415) that hi-hat's
+                  # hardware noise-XOR output doesn't respond to
+                  # waveform/MULT at all, only TL/envelope, which is
+                  # exactly what had already been tuned (and, per the
+                  # commits above, tuned progressively *louder* and more
+                  # instant-on/instant-off -- the likely actual cause of
+                  # the click). Eased back down: TL 0->10 (~7.5dB, OPL2's
+                  # 0.75dB/step), a first pass to reduce harshness without
+                  # losing the hi-hat entirely -- listen and adjust further
+                  # if still too clicky, or not enough.
+                  "m_ave": 0x02, "m_ksl": 0x0C, "m_atdec": 0xFF, "m_susrel": 0x0F, "m_wave": 0x00,
                   "c_ave": 0x01, "c_ksl": 0x00, "c_atdec": 0xFA, "c_susrel": 0x39, "c_wave": 0x00,
                   "feedback": 0x0C},
             # Tom's modulator (its only audible operator -- rhythm-mode
@@ -896,9 +908,9 @@ class OPL2Translator:
 # profile instead of the standard one -- see MELODIC_CHANNEL_BY_SOURCE_WIDE.
 WIDE_TRACK_INDICES = {3, 5, 7}
 
-def translate_nsf_track(nsf_path: str, track_idx: int = 0, loops: int = 1) -> List[OPL2Event]:
+def translate_nsf_track(nsf_path: str, track_idx: int = 0, loops: int = 1, max_seconds: int = 100) -> List[OPL2Event]:
     converter = NSFConverter(nsf_path)
-    history = converter.build_subframe_history(track_idx)
+    history = converter.build_subframe_history(track_idx, max_seconds=max_seconds)
     translator = OPL2Translator()
     wide = track_idx in WIDE_TRACK_INDICES
     sfx = track_idx in SFX_TRACK_SOURCE
@@ -909,21 +921,70 @@ def translate_nsf_track(nsf_path: str, track_idx: int = 0, loops: int = 1) -> Li
     return events
 
 
-def export_all_tracks(nsf_path: str, output_dir: str) -> List[str]:
+# How many real seconds of NSF playback to capture per track before
+# translating. build_subframe_history()'s own default (100s) silently
+# truncates every ~300s track (00/02/04/05/06/07/14/20/21) to its first
+# 100 real seconds -- confirmed the hard way on track 00 (PacManCE_00.BIN):
+# a regen using the default cap produced only the first 100s of a
+# continuously-evolving composition, which then sounded like it "restarted"
+# after ~100s when looped, when in fact ~200s of genuinely different music
+# was simply never captured. Values below are rounded up from the actual
+# measured duration of each currently-committed, known-correct .BIN
+# (parsed tick-by-tick and converted at the runtime's 240Hz quarter-frame
+# rate) so a full `--all` regen reproduces what's already in the repo,
+# not a silently-truncated guess.
+TRACK_MAX_SECONDS = {
+    0: 300, 1: 5, 2: 300, 3: 16, 4: 300, 5: 300, 6: 300, 7: 300,
+    8: 1, 9: 1, 10: 1, 11: 1, 12: 3, 13: 1, 14: 300, 15: 1,
+    16: 2, 17: 1, 18: 1, 19: 3, 20: 300, 21: 300,
+}
+
+# Track 16's real NSF content never naturally goes silent (the composer
+# holds the note; see opl2_translate.py's rhythm/patch commentary and this
+# session's own finding: "goes on for too long" if not capped) -- unlike
+# every other short SFX track, a longer TRACK_MAX_SECONDS capture window
+# would keep capturing more of that still-sustaining note, not just more
+# silence. Caps the *translated* stream to the first N events, matching
+# music/tracks/PacManCE_16.BIN exactly (verified byte-for-byte, including
+# the manually-zeroed trailing delay on the final event -- no need to
+# linger before the one-shot ends).
+TRACK_MAX_EVENTS = {
+    16: 122,
+}
+
+
+def _truncate_events(events: List[OPL2Event], max_events: int) -> List[OPL2Event]:
+    out = list(events[:max_events])
+    if out:
+        last = out[-1]
+        out[-1] = OPL2Event(last.reg, last.value, 0)
+    return out
+
+
+def export_all_tracks(nsf_path: str, output_dir: str, bin_out_dir: str = "music/tracks") -> List[str]:
     converter = NSFConverter(nsf_path)
     translator = OPL2Translator()
     os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(bin_out_dir, exist_ok=True)
     exported: List[str] = []
 
     for track_idx in range(converter.total_songs):
-        history = converter.build_subframe_history(track_idx)
+        max_seconds = TRACK_MAX_SECONDS.get(track_idx, 100)
+        history = converter.build_subframe_history(track_idx, max_seconds=max_seconds)
         events = translator.translate_frame_history(
             history, wide=track_idx in WIDE_TRACK_INDICES,
             sfx=track_idx in SFX_TRACK_SOURCE, sfx_source=SFX_TRACK_SOURCE.get(track_idx, 5))
+        if track_idx in TRACK_MAX_EVENTS:
+            events = _truncate_events(events, TRACK_MAX_EVENTS[track_idx])
+
         out_path = os.path.join(output_dir, f"track_{track_idx:02d}.json")
         with open(out_path, "w", encoding="utf-8") as fh:
             json.dump([e.to_tuple() for e in events], fh, separators=(",", ":"))
         exported.append(out_path)
+
+        bin_path = os.path.join(bin_out_dir, f"PacManCE_{track_idx:02d}.BIN")
+        serialize_events_to_bin(events, bin_path)
+        exported.append(bin_path)
 
     return exported
 
@@ -946,6 +1007,7 @@ def main() -> None:
     parser.add_argument("--out-dir", default="music/generated", help="Output directory for translated event files")
     parser.add_argument("--bin-out", default=None, help="Optional path for a generated RP6502 music binary (.BIN) file")
     parser.add_argument("--loops", type=int, default=1, help="How many times to render the imported track before the loop marker")
+    parser.add_argument("--seconds", type=int, default=100, help="How many real seconds of NSF playback to capture before translating (default 100 -- 300s tracks need --seconds 300, not --loops, to capture the real continuously-evolving music instead of repeating a short clip)")
     parser.add_argument("--limit", type=int, default=20, help="How many events to print for the selected track")
     args = parser.parse_args()
 
@@ -962,7 +1024,7 @@ def main() -> None:
     print(f"Title: {converter.title}")
     print(f"Tracks: {converter.total_songs}")
 
-    events = translate_nsf_track(args.nsf, args.track, loops=args.loops)
+    events = translate_nsf_track(args.nsf, args.track, loops=args.loops, max_seconds=args.seconds)
     print(f"Track {args.track} event count: {len(events)}")
     if args.bin_out:
         size = serialize_events_to_bin(events, args.bin_out)

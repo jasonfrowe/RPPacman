@@ -356,7 +356,7 @@ void check_and_eat_prize(int16_t drawn_world_x, int16_t drawn_world_y) {
 
             // Award points for capturing left bonus item
             uint16_t pts = get_prize_points(left_prize_sprite);
-            add_player_score(pts);
+            add_player_score(pts, SCORE_CAT_PRIZE);
             trigger_prize_score_animation(0, pts);
 
             prizes[0].frame = 48; // Blank sprite
@@ -389,7 +389,7 @@ void check_and_eat_prize(int16_t drawn_world_x, int16_t drawn_world_y) {
 
             // Award points for capturing right bonus item
             uint16_t pts = get_prize_points(right_prize_sprite);
-            add_player_score(pts);
+            add_player_score(pts, SCORE_CAT_PRIZE);
             trigger_prize_score_animation(1, pts);
 
             prizes[1].frame = 48; // Blank sprite
