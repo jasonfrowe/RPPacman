@@ -643,11 +643,45 @@ static void update_ghost_outside_movement(int ghost_index) {
 
             // Fallback: If no valid non-reversing direction was found, check if continuing current direction is valid,
             // otherwise force reversing opposite direction to prevent stepping into walls.
+            //
+            // Must respect the same tunnel suppression as the main loop
+            // above -- otherwise this is a loophole that defeats it. If the
+            // main loop finds no candidate (e.g. left/right both genuinely
+            // blocked by the real border wall at most rows of the
+            // horizontal tunnel's padding column), falling back to a raw,
+            // unfiltered can_step_dir(g->dir)/can_step_dir(opposite_dir)
+            // check happily grants up/down again right there, since the
+            // padding column is open vertically almost the whole map
+            // height. That's a real, confirmed mechanism for exactly the
+            // reported symptom: the ghost gets shoved up/down, that axis
+            // doesn't change world_px so it's still in the same suppressed
+            // zone at the next intersection, and once it hits a real
+            // boundary in that direction this same fallback's second
+            // branch sends it right back the way it came -- a genuine
+            // mechanical 180 flip, repeating forever.
             if (best_dir == DIR_NONE) {
-                if (can_step_dir(g->world_px, g->world_py, g->dir)) {
+                bool dir_is_lr = (g->dir == DIR_LEFT || g->dir == DIR_RIGHT);
+                bool dir_is_ud = (g->dir == DIR_UP || g->dir == DIR_DOWN);
+                bool opp_is_lr = (opposite_dir == DIR_LEFT || opposite_dir == DIR_RIGHT);
+                bool opp_is_ud = (opposite_dir == DIR_UP || opposite_dir == DIR_DOWN);
+                bool dir_suppressed = (is_in_vertical_tunnel && g->mode != GHOST_MODE_EATEN && dir_is_lr) ||
+                                       (is_in_horizontal_tunnel && dir_is_ud);
+                bool opp_suppressed = (is_in_vertical_tunnel && g->mode != GHOST_MODE_EATEN && opp_is_lr) ||
+                                       (is_in_horizontal_tunnel && opp_is_ud);
+
+                if (!dir_suppressed && can_step_dir(g->world_px, g->world_py, g->dir)) {
                     best_dir = g->dir;
-                } else if (can_step_dir(g->world_px, g->world_py, opposite_dir)) {
+                } else if (!opp_suppressed && can_step_dir(g->world_px, g->world_py, opposite_dir)) {
                     best_dir = opposite_dir;
+                } else if (can_step_dir(g->world_px, g->world_py, g->dir)) {
+                    // Truly no allowed direction at all (both real axis
+                    // candidates blocked and the perpendicular one is
+                    // suppressed) -- should be rare. Keep moving in the
+                    // current direction rather than reintroduce the
+                    // suppressed axis here too; check_and_reset_stuck_
+                    // ghosts() covers the case where this leaves the ghost
+                    // somewhere it shouldn't be.
+                    best_dir = g->dir;
                 } else {
                     best_dir = g->dir;
                 }
@@ -695,6 +729,14 @@ static uint8_t scan_direction_for_safe_tile(uint16_t tx, uint16_t ty, int8_t dx,
         if (nx < 0 || nx >= MAZE_MAP_WIDTH || ny < 0 || ny >= MAZE_MAP_HEIGHT) {
             return 0xFF;
         }
+        // Never land a rescued ghost in the horizontal tunnel's outer
+        // padding columns (0/46) -- blank/safe by tile value almost the
+        // whole map height (confirmed by direct maze-data inspection),
+        // but not a real path for anyone outside the tunnel row itself,
+        // and the fixed-up direction-selection logic above now refuses to
+        // move a ghost vertically while standing there. Landing it there
+        // would just create a new way to get stuck instead of rescuing it.
+        if (nx == 0 || nx == MAZE_MAP_WIDTH - 1) continue;
         if (is_ghost_safe_tile_value(read_maze_tile((uint16_t)nx, (uint16_t)ny))) {
             return dist;
         }
