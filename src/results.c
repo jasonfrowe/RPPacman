@@ -1,7 +1,6 @@
 #include <rp6502.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include "constants.h"
@@ -94,14 +93,8 @@ void results_init(void) {
 
 static void load_rom_asset_to_xram(const char *filename, unsigned dest, unsigned size) {
     int fd = open(filename, O_RDONLY);
-    if (fd < 0) {
-        printf("results: failed to open %s\n", filename);
-        return;
-    }
-    int n = read_xram(dest, size, fd);
-    if (n < 0) {
-        printf("results: read_xram(%s) failed (%d)\n", filename, n);
-    }
+    if (fd < 0) return;
+    read_xram(dest, size, fd);
     close(fd);
 }
 

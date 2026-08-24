@@ -1,7 +1,8 @@
 #include <rp6502.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <string.h>
 
 #include "constants.h"
@@ -179,27 +180,29 @@ static void reset_default_mappings(void)
     s_button_mappings[ACTION_BTN_START].gamepad_mask = GP_BTN_START;
 }
 
+// Uses the lightweight open()/read()/close() (fcntl.h/unistd.h) file API
+// instead of stdio's fopen()/fread() family -- buffered stdio drags in a
+// full malloc + FILE-stream subsystem (confirmed ~9KB of the binary, see
+// ROADMAP.md's code-size notes) that this small one-shot config read
+// doesn't need.
 static bool load_button_mappings(void)
 {
-    FILE *fp;
-    int count;
-
-    fp = fopen(JOYSTICK_CONFIG_FILE, "rb");
-    if (!fp) {
+    int fd = open(JOYSTICK_CONFIG_FILE, O_RDONLY);
+    if (fd < 0) {
         return false;
     }
 
-    count = fgetc(fp);
-    if (count <= 0) {
-        fclose(fp);
+    uint8_t count;
+    if (read(fd, &count, 1) != 1 || count == 0) {
+        close(fd);
         return false;
     }
 
     for (int i = 0; i < count; ++i) {
         joystick_mapping_t mapping;
 
-        if (fread(&mapping, sizeof(mapping), 1, fp) != 1) {
-            fclose(fp);
+        if (read(fd, &mapping, sizeof(mapping)) != (int)sizeof(mapping)) {
+            close(fd);
             return false;
         }
 
@@ -213,7 +216,7 @@ static bool load_button_mappings(void)
         s_button_mappings[mapping.action_id].gamepad_mask2 = 0u;
     }
 
-    fclose(fp);
+    close(fd);
     return true;
 }
 
