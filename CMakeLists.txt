@@ -19,10 +19,17 @@ rp6502_asset(RPPacMan 0x19CDA images/R_Mazes.bin)
 rp6502_asset(RPPacMan 0x1D970 images/title_map.bin)
 rp6502_asset(RPPacMan 0x1DE20 images/Titles_RP6502_4bpp.bin)
 
+# Additional assets to read in from the ROM 
+rp6502_asset(RPPacMan resultsmap images/Results_map.bin)
+rp6502_asset(RPPacMan resultstiles images/Results_tiles_4bpp.bin) #8x8, 132 frame
+rp6502_asset(RPPacMan titlemap images/title_map_copy.bin)
+rp6502_asset(RPPacMan titletile images/Titles_RP6502_4bpp_copy.bin)
+
 # Music assets
 rp6502_asset(RPPacMan pacman01 music/tracks/PacManCE_01.BIN) #Game start jingle PacManCE_01.BIN
 rp6502_asset(RPPacMan pacman02 music/tracks/PacManCE_02.BIN) #Title screen music PacManCE_02.BIN
 rp6502_asset(RPPacMan pacman03 music/tracks/PacManCE_00.BIN) #Normal game music PacManCE_00.BIN
+rp6502_asset(RPPacMan pacman05 music/tracks/PacManCE_05.BIN) #Results screen music PacManCE_05.BIN
 
 # SFX-channel assets (reserved OPL2 channel 5 only -- see opl2_translate.py's
 # sfx profile and opl.c's sfx_play/sfx_set_ambient). The two ambient loops

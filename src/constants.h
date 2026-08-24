@@ -59,13 +59,13 @@
 #define SPRITE_DATA_END        (TITLE_TILES_DATA + TITLE_TILES_DATA_SIZE) // End address of sprite data
 
 // Palette configurations
-#define MAZE_PALETTE_ADDR       0xFC00              // 16-color palette (32 bytes, 0xFC00-0xFC1F)
+#define MAZE_PALETTE_ADDR       0xFD00              // 16-color palette (32 bytes, 0xFC00-0xFC1F)
 #define MAZE_PALETTE_SIZE       0x0020
-#define PLAYER_PALETTE_ADDR     0xFC20              // 16-color palette (32 bytes, 0xFC20-0xFC3F)
+#define PLAYER_PALETTE_ADDR     0xFD20              // 16-color palette (32 bytes, 0xFC20-0xFC3F)
 #define PLAYER_PALETTE_SIZE     0x0020
-#define FONT_PALETTE_ADDR       0xFC40              // 16-color palette (32 bytes, 0xFC40-0xFC5F)
+#define FONT_PALETTE_ADDR       0xFD40              // 16-color palette (32 bytes, 0xFC40-0xFC5F)
 #define FONT_PALETTE_SIZE       0x0020
-#define TITLE_PALETTE_ADDR      0xFC60              // 16-color palette (32 bytes, 0xFC60-0xFC7F)
+#define TITLE_PALETTE_ADDR      0xFD60              // 16-color palette (32 bytes, 0xFC60-0xFC7F)
 #define TITLE_PALETTE_SIZE      0x0020
 
 // OPL2 sound chip configuration
