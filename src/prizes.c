@@ -123,9 +123,21 @@ static void copy_single_column_with_offset(uint8_t level, uint16_t tx, uint8_t o
         uint8_t tile_val = RIA.rw0;
 
         // Apply wave offset only to non-blank tiles with indices 1 <= tile_val <= 114
+        // -- but never let it push the result to 116 or above. is_wall_tile()
+        // (player.c) and is_ghost_safe_tile_value() (ghost.c) both treat
+        // 116+ as passable/safe (that's the pellet/score-popup range), so a
+        // wall tile whose value sits near the top of the 1-114 range (real
+        // maze data has some as high as 114/115) can alias into "passable"
+        // for several frames while offset_val is still large early in a
+        // transition, then flip back to "wall" a few frames later as the
+        // wave settles -- letting a ghost path into a gap that then closes
+        // on it. Confirmed against every level's actual map data: several
+        // tiles sit in the 108-114 range that would cross 116 with the
+        // offset's old, unclamped max of +7.
         uint8_t final_tile = tile_val;
         if (offset_val > 0 && tile_val > 0 && tile_val <= 114) {
-            final_tile += offset_val;
+            uint16_t inflated = (uint16_t)tile_val + offset_val;
+            if (inflated < 116) final_tile = (uint8_t)inflated;
         }
 
         RIA.addr0 = MAZE_MAP_DATA + map_offset;
