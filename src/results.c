@@ -363,6 +363,14 @@ void results_update(bool press_start) {
             // 4 score-total digit runs (rows 3-4) aren't; clear them so
             // they don't reappear once the font palette fades back in.
             blank_text_map_all();
+            // blank_text_map_all() also wipes row 0's "1UP"/"HI" labels
+            // and row 13's Pac-Man/x lives-count marker -- static chrome
+            // that init_tilemap_edges() only ever draws once, at boot
+            // (tile_mode2_text_map_init()), since nothing else normally
+            // touches those rows outside the score/lives digit fields it
+            // deliberately leaves alone. Redraw it now that this is no
+            // longer true.
+            init_tilemap_edges();
             start_warm_title_screen();
             break;
         }
