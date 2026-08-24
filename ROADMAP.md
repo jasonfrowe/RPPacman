@@ -1,7 +1,7 @@
 # RPPacMan Roadmap
 
-Updated: 2026-08-23
-Branch: gameplay-sfx-tuning (forked from main after the NFS-Music-Take2 merge)
+Updated: 2026-08-24
+Branch: codesize-optimization (forked from main after the gameplay-sfx-tuning merge)
 
 Big-picture task list for finishing Pac-Man CE beyond the music work tracked
 in `Plan.md` (which stays scoped to the NSF->OPL2 translation effort). We are
@@ -69,23 +69,108 @@ level (`FRIGHTENED_DURATION_TABLE`, 600 down to 240 frames) via a plain
 levels -- matching the pacing of the ghosts' own sprite flash-rate
 speedup.
 
-### v. Game-over -> Results transition
+### v. Game-over -> Results transition -- DONE
 
-New title-state machine states, mirroring the existing
-`TITLE_SUBSTATE_WARM_FADE_OUT`/`BLACK`/`FADE_IN` pattern already used for
-the game-over -> title transition.
+New `STATE_RESULTS` game state (`src/main.c`), triggered from either
+game-over path (`player.lives==0` in `src/ghost.c`, or the 5-minute game
+timer expiring in `src/main.c`) via `start_results_screen()`. Full
+sequence in `src/results.c`/`results.h` (new files): fade to score-only,
+`ROM:pacman01` jingle, 90-frame pan to center the score, 165-frame hold,
+fade out, `read_xram()`-based asset swap of `resultsmap`/`resultstiles`
+into `TITLE_MAP_DATA`/`TITLE_TILES_DATA`, fade in, totals, histogram,
+wait for START, restore the original title assets
+(`titlemap`/`titletile` ROM copies) and return via the existing
+`start_warm_title_screen()`.
 
-### vi. Results screen
+### vi. Results screen -- DONE
 
-Shows how well the player did, including a histogram of points over time.
-Needs score sampled at some interval during play (a ring buffer written in
-`update_game_timer_display()`'s neighborhood, or wherever the per-frame
-gameplay tick already lives) and a bar/line-graph renderer in tile or
-sprite mode.
+Score tracking gained per-category totals (`player.score_by_cat[]`,
+`SCORE_CAT_PELLET`/`PRIZE`/`GHOST`) and a 10-second-interval history
+(`s_score_history[30][3]` in `src/player.c`, fed by `add_player_score()`)
+covering the game's own 5-minute cap. The histogram
+(`src/results.c`) renders one shared column per interval in a fixed
+ghost/prize/pellet z-order (back to front), using dedicated blend tiles
+for the 3 possible overlap pairs so a shorter, later-drawn bar doesn't
+punch a black gap in a taller earlier one -- `images/Results_tiles_4bpp.bin`
+now has 153 tiles (was 132) to cover the base + blend sets. Bars fill
+bottom-to-top, one at a time, animated.
 
 ### vii. Ranking screen
 
-Appears after Results. Depends on (ii-b)'s persistence story.
+Appears after Results. Depends on (ii-b)'s persistence story. Results
+totals/histogram (vi) don't persist across sessions -- this is purely
+end-of-run, matching what was actually asked for.
+
+## Ghost mechanics: tunnel/maze-transition fixes
+
+A cluster of "ghost (or eaten eyes) gets stuck oscillating up/down near
+the tunnel" reports, all traced to real bugs in `src/ghost.c`'s
+at-intersection direction selection and stuck-ghost recovery, not
+papered over with a time-based watchdog (tried, then deliberately
+reverted -- see git history on this branch if the idea comes up again;
+it worked but added a second mechanism with its own corner cases on top
+of an already-hard problem):
+
+- `check_and_reset_stuck_ghosts()` no longer touches `GHOST_MODE_EATEN`
+  ghosts (their own home-return targeting already has the same
+  no-per-pixel-wall-check property this escape logic needs; running both
+  fought each other).
+- Eaten eyes are exempt from the vertical-tunnel left/right-turn
+  suppression (drawn_y-band near the top/bottom of the screen), so they
+  can still turn toward the home door instead of oscillating through the
+  wrap seam.
+- New horizontal-tunnel up/down-turn suppression at the outer padding
+  columns (tile column 0/46) -- confirmed by direct maze-data inspection
+  to be blank/unwalled almost the entire map height, i.e. not a real
+  path for anyone, just an artifact of the border sitting one column in
+  from the map edge.
+- **The actual root cause of the reported loop**: the fallback right
+  after the main direction-candidate loop ("no candidate found, try
+  continuing current direction, else reverse") checked `can_step_dir()`
+  completely unfiltered by the tunnel suppression above it. At the
+  tunnel mouth, if left/right both genuinely fail (true at most rows of
+  the padding column, since the real border wall is closed except at a
+  handful of rows), the fallback happily granted up/down anyway --
+  and since that doesn't change horizontal position, the ghost stayed in
+  the same suppressed zone at the next intersection, eventually hitting
+  a real boundary and reversing back the way it came. A genuine,
+  mechanical 180-degree flip, forever. Fixed: the fallback now respects
+  the same suppression as the main loop.
+- The stuck-ghost escape scan (`scan_direction_for_safe_tile`) no longer
+  treats the padding columns (0/46) as a valid rescue target, for the
+  same reason -- blank by tile value, not a real path.
+- Investigated and ruled out as the cause (kept as defensive fixes
+  regardless, but confirmed via real map-data analysis that neither
+  explains the reported symptom): the maze-transition wave's cosmetic
+  recolor offset can in principle alias a wall tile into the
+  pellet/safe numeric range (>=116) with no ceiling check -- fixed, but
+  the only real-data tiles close enough to that boundary are outside the
+  rows/columns the transition wave actually touches, so this was a
+  red herring for this particular bug, not the explanation.
+
+## Code size
+
+`main.c`'s `puts()` boot banner, two `printf()` diagnostic calls in
+`results.c`, and `input.c`'s `fopen`/`fread`/`fclose` joystick-config
+reader were the only `stdio.h` usage in the codebase -- confirmed via
+`llvm-nm --size-sort` that this pulled in a full buffered-I/O +
+malloc/free subsystem no shipped build needs (~9KB: the internal
+`print`/`vfprintf` engine alone is 3.2KB). Removed entirely (`input.c`
+now uses the lighter `open()`/`read()`/`close()`, matching `opl.c`'s
+existing pattern). **Result: .text 59689->48744, .bss 696->442, total
+-11.4KB (~18%)** -- confirmed via `llvm-size -A` on the linked ELF, and
+this is *with* the results-screen/ghost-fix work above included, not
+instead of it.
+
+`-Os` and `-flto` are already the toolchain's own defaults for this
+target (confirmed: `.obj` files are LLVM bitcode, not native code) --
+no build-flag changes needed. Every local (function-body) `const` array
+in the codebase already correctly uses `static const` (the
+llvm-mos.org optimization guide's sharpest warning: a non-static one
+gets a stack copy on every call). If code size becomes a problem again,
+check for new `stdio.h`/heavy-library creep first -- it's by far the
+biggest lever pulled so far, and easy to reintroduce by accident (e.g.
+a stray debug `printf`).
 
 ## Music: what's confirmed and what's still open
 
@@ -174,6 +259,9 @@ once regenerated.
    07's wide-profile tracks and the un-triggered 08-11/17 stingers, none of
    which are reachable in-game yet).
 2. Extra mode (iii) -- blocked on new maps/assets, not audio.
-3. Game-over -> Results -> Ranking screens (v-vii) -- needs a persistence
-   story first (also blocks ii-a/ii-b), then the new title-state-machine
-   states and the score-sampling/histogram renderer.
+3. Ranking screen (vii) -- needs a persistence story first (also blocks
+   ii-a/ii-b). Results (v/vi) are done and don't need it.
+4. Results histogram's black-gap-on-overlap visuals (vi) are functional
+   but the blend-tile z-order compositing could still use a closer look
+   once there's real playtest data to look at (organic play rarely earns
+   enough in one 10s window to show much).
