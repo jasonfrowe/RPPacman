@@ -16,5 +16,6 @@ void set_game_motion_started(bool started);
 void start_title_screen(void);
 void start_warm_title_screen(void);
 void start_normal_game(void);
+void start_results_screen(void);
 
 #endif // GHOST_H

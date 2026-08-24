@@ -297,6 +297,18 @@ void trigger_power_pellet_frightened(void) {
 // Check collision between Pac-Man and ghosts using central drawn positions & 4x4 collision box
 void check_pacman_ghost_collisions(void) {
     if (s_death_seq_timer > 0) return;
+    // Don't start a new eat while the previous one's 30-frame pause/
+    // animation is still playing. Without this, two ghosts stacked on
+    // the same tile both get eaten almost at once: everything is frozen
+    // during the pause (comment below, "Set 30-frame pause for all
+    // motion"), so a second overlapping ghost is still sitting right
+    // there on the very next call -- and this function is called twice
+    // per frame (ghost_update_motion(), before and after ghost movement/
+    // screen updates), so even the per-call `break` below doesn't stop
+    // the second call from eating it in the same frame. This makes
+    // stacked ghosts get eaten one at a time, each with its own full
+    // pause and animation, chaining the score correctly in sequence.
+    if (s_eat_pause_timer > 0) return;
 
     // Central drawn position of Pac-Man:
     // Pac-Man sprite top-left drawn at (player.x_pos_px + VISUAL_X_OFFSET, player.world_py + VISUAL_Y_OFFSET)
@@ -345,7 +357,7 @@ void check_pacman_ghost_collisions(void) {
                 else if (s_ghosts_eaten_chain == 7) pts = 2800;
                 else                                pts = 3200;
 
-                add_player_score(pts);
+                add_player_score(pts, SCORE_CAT_GHOST);
 
                 // Set 30-frame pause for all motion & trigger eat animation
                 s_eat_pause_timer = 30;
@@ -553,12 +565,41 @@ static void update_ghost_outside_movement(int ghost_index) {
             // Check if ghost is in vertical tunnel regions (< 40px or > 200px drawn Y)
             bool is_in_vertical_tunnel = (drawn_y < 40) || ((drawn_y + SPRITE_SIZE_PX) > 200);
 
+            // The horizontal tunnel's mouth (world tile column 0/46) sits
+            // just past the real playable border (column 1/45), which is
+            // walled everywhere except a handful of rows -- but the
+            // margin column itself (confirmed by direct maze-data
+            // inspection) is blank/unwalled for nearly the whole map
+            // height, since nothing was ever meant to stand there except
+            // while passing straight through the tunnel. A ghost that
+            // turns up/down right at the tunnel mouth can walk that
+            // unwalled margin almost the full height of the map with no
+            // real wall to stop it -- this margin isn't a real path for
+            // anyone, so unlike the vertical-tunnel case below, eaten
+            // eyes get no exemption here.
+            bool is_in_horizontal_tunnel = (g->world_px < MAZE_TILES_SIZE_PX) ||
+                                            (g->world_px >= WORLD_WIDTH - MAZE_TILES_SIZE_PX);
+
             for (uint8_t d = 0; d < 4; d++) {
                 int8_t test_dir = EVAL_DIRS[d];
                 if (test_dir == opposite_dir) continue;
 
                 // Ignore left/right turn evaluation when in vertical tunnel
-                if (is_in_vertical_tunnel && (test_dir == DIR_LEFT || test_dir == DIR_RIGHT)) {
+                // -- except for eaten eyes returning home: a real wall
+                // still blocks the turn via can_step_dir() below regardless,
+                // so this only matters where a genuine turn exists, and
+                // suppressing it there could trap the eyes oscillating
+                // up/down through the wrap seam forever (the seam sits
+                // inside this same Y band), never reaching a Y position
+                // where a left/right turn toward the home door is allowed.
+                if (is_in_vertical_tunnel && g->mode != GHOST_MODE_EATEN &&
+                    (test_dir == DIR_LEFT || test_dir == DIR_RIGHT)) {
+                    continue;
+                }
+
+                // Ignore up/down turn evaluation at the horizontal
+                // tunnel's mouth -- see is_in_horizontal_tunnel above.
+                if (is_in_horizontal_tunnel && (test_dir == DIR_UP || test_dir == DIR_DOWN)) {
                     continue;
                 }
 
@@ -661,10 +702,50 @@ static uint8_t scan_direction_for_safe_tile(uint16_t tx, uint16_t ty, int8_t dx,
     return 0xFF;
 }
 
+// Canonical "deliver this ghost home" sequence -- shared by the tile-
+// value-based fallback below and the progress watchdog further down.
+// Always resets mode to CHASE: reached naturally (eaten eyes arriving at
+// the door, see GHOST_STATE_ENTERING_HOUSE) or forced here, a ghost
+// sitting in the house has no business staying EATEN or FRIGHTENED.
+static void force_ghost_home(uint8_t i) {
+    ghost_struct *g = &ghosts[i];
+    g->world_px = GHOST_HOME_X[i];
+    g->world_py = GHOST_MAX_Y[i]; // Row 16 (128px)
+    g->sub_px = g->world_px << 8;
+    g->sub_py = g->world_py << 8;
+    g->bounce_dist_px = 0;
+    g->in_house = true;
+    g->state = GHOST_STATE_HOME_BOUNCE;
+    g->mode = GHOST_MODE_CHASE;
+    g->dir = DIR_UP;
+
+    bool already_queued = false;
+    for (uint8_t f = 0; f < s_fifo_count; f++) {
+        if (s_fifo_queue[f] == i) {
+            already_queued = true;
+            break;
+        }
+    }
+    if (!already_queued && s_fifo_count < 4) {
+        s_fifo_queue[s_fifo_count++] = i;
+    }
+}
+
 void check_and_reset_stuck_ghosts(void) {
     for (int i = 0; i < NGHOSTS; i++) {
         ghost_struct *g = &ghosts[i];
         if (g->in_house || g->state != GHOST_STATE_OUTSIDE) continue;
+
+        // Eaten eyes already have their own self-sufficient no-wall-check
+        // movement toward the home door tile (update_ghost_outside_movement's
+        // GHOST_MODE_EATEN branch, same "no per-pixel wall check between
+        // intersections" property as this escape walk) -- if this check
+        // didn't skip them, it would overwrite g->dir with an unrelated
+        // escape direction on every single frame an eaten ghost sits on an
+        // invalid tile (exactly what happens while it's legitimately
+        // crossing one en route home), fighting the home-return targeting
+        // and preventing it from ever reaching the door.
+        if (g->mode == GHOST_MODE_EATEN) continue;
 
         uint16_t tx = (uint16_t)(g->world_px / MAZE_TILES_SIZE_PX);
         uint16_t ty = (uint16_t)(g->world_py / MAZE_TILES_SIZE_PX);
@@ -707,25 +788,7 @@ void check_and_reset_stuck_ghosts(void) {
             // (should be extremely rare): fall back to the old
             // teleport-home recovery so a ghost can never get permanently
             // stuck.
-            g->world_px = GHOST_HOME_X[i];
-            g->world_py = GHOST_MAX_Y[i]; // Row 16 (128px)
-            g->sub_px = g->world_px << 8;
-            g->sub_py = g->world_py << 8;
-            g->bounce_dist_px = 0;
-            g->in_house = true;
-            g->state = GHOST_STATE_HOME_BOUNCE;
-            g->dir = DIR_UP;
-
-            bool already_queued = false;
-            for (uint8_t f = 0; f < s_fifo_count; f++) {
-                if (s_fifo_queue[f] == i) {
-                    already_queued = true;
-                    break;
-                }
-            }
-            if (!already_queued && s_fifo_count < 4) {
-                s_fifo_queue[s_fifo_count++] = i;
-            }
+            force_ghost_home((uint8_t)i);
         }
     }
 }
@@ -917,7 +980,7 @@ void ghost_update_motion(void) {
             }
 
             if (player.lives == 0) {
-                start_warm_title_screen();
+                start_results_screen();
             } else {
                 s_game_motion_started = true;
 

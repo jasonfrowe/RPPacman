@@ -143,9 +143,33 @@ static void update_score_popups(void) {
 
 static uint32_t s_next_extra_life_threshold = 20000;
 
-void add_player_score(uint32_t pts) {
+// Points earned per 10-second interval per category, for the results
+// screen's histogram. Indexed by get_game_elapsed_frames()/600, clamped
+// to the last bucket -- the game's own 5-minute cap (18000 frames) means
+// that clamp is never actually exercised in practice.
+static uint16_t s_score_history[SCORE_HISTORY_BUCKETS][SCORE_CAT_COUNT];
+
+void reset_score_history(void) {
+    for (uint8_t b = 0; b < SCORE_HISTORY_BUCKETS; b++) {
+        for (uint8_t c = 0; c < SCORE_CAT_COUNT; c++) {
+            s_score_history[b][c] = 0;
+        }
+    }
+}
+
+uint16_t get_score_history_bucket(uint8_t bucket, uint8_t category) {
+    if (bucket >= SCORE_HISTORY_BUCKETS || category >= SCORE_CAT_COUNT) return 0;
+    return s_score_history[bucket][category];
+}
+
+void add_player_score(uint32_t pts, uint8_t category) {
     player.score += pts;
+    player.score_by_cat[category] += pts;
     update_player_score_display(player.score);
+
+    uint16_t bucket = get_game_elapsed_frames() / 600;
+    if (bucket >= SCORE_HISTORY_BUCKETS) bucket = SCORE_HISTORY_BUCKETS - 1;
+    s_score_history[bucket][category] += pts;
 
     while (player.score >= s_next_extra_life_threshold) {
         player.lives++;
@@ -195,7 +219,7 @@ static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
 
         uint32_t dot_pts = get_current_dot_value(player.pellets_eaten);
         player.pellets_eaten++;
-        add_player_score(dot_pts);
+        add_player_score(dot_pts, SCORE_CAT_PELLET);
 
         uint8_t score_tile = get_score_tile_index(dot_pts);
         push_score_popup(tile_x, tile_y, score_tile);

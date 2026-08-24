@@ -30,6 +30,10 @@ void sprite_mode5_init(void) {
     player.x_pos_px = (int16_t)((SCREEN_WIDTH - SPRITE_SIZE_PX) / 2);
     player.y_pos_px = player.world_py - 3; // Visual offset to restore 165px plotted position
     player.score = 0;
+    player.score_by_cat[SCORE_CAT_PELLET] = 0;
+    player.score_by_cat[SCORE_CAT_PRIZE] = 0;
+    player.score_by_cat[SCORE_CAT_GHOST] = 0;
+    reset_score_history();
     player.pellets_eaten = 0;
     player.lives = 3;
 
