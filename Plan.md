@@ -1,7 +1,9 @@
 # Pac-Man CE OPL2 Translation Plan
 
-Updated: 2026-08-20
-Branch: NFS-Music-Take2
+Updated: 2026-08-24
+Branch: codesize-optimization (see ROADMAP.md for the branch's actual
+current name if this goes stale -- this file just tracks the music
+work regardless of which branch it lands on)
 
 ## Goal
 
@@ -421,6 +423,47 @@ channel-5 reservation is correctly sized: every actual SFX track in the NSF
 
 See `ROADMAP.md` for the full game-completion task list beyond music, and
 the per-track usage table cross-referenced against this census.
+
+### 2026-08-24: hi-hat clicking, and a real track-0 duration regression
+
+User: hi-hat reads as "terrible clicking throughout the song" in
+PacManCE_00.BIN. Checked for an unused, better-matched hi-hat patch to
+swap in first (the DE-matching approach used for kick/tom) -- confirmed
+via git history (commit bba7415) this doesn't exist and can't: hi-hat's
+audio comes from OPL2's hardware noise-XOR algorithm, which doesn't
+respond to waveform/MULT at all, only TL/envelope -- exactly what had
+already been hand-tuned, progressively louder each pass (TL pushed to
+0, instant attack/decay). Eased hi-hat TL 0->10, user confirmed
+improvement, then ->12 for a bit more.
+
+Regenerating to apply that patch change surfaced a real, unrelated
+regression: `NSFConverter.build_subframe_history()` has a hardcoded
+`max_seconds=100` default with **no CLI override**, so a plain `--track
+0 --bin-out ...` regen silently truncates any ~300s track (00, 02, 04,
+05, 06, 07, 14, 20, 21) to its first 100 real seconds. My first attempt
+to compensate (`--loops 3`, tripling that 100s capture) just replayed
+the same 100s clip 3 times back-to-back -- not the real, continuously-
+evolving 100-300s content, which is why it audibly "restarted" at
+~1'44". Added a proper `--seconds` CLI flag instead of working around
+it, and regenerated with `--seconds 300 --loops 1` (one real continuous
+capture). Verified byte-for-byte identical to the previously-committed
+correct file except for the one intentional hi-hat TL register byte
+(patches are written once at stream start, not per-note, so a patch
+change is genuinely a 1-byte diff across a 434KB file).
+
+Fixed the same bug properly in `export_all_tracks()` (the `--all` bulk
+path), which had the identical problem plus never actually wrote `.BIN`
+files at all (only intermediate JSON) -- added `TRACK_MAX_SECONDS`, a
+verified per-track duration table (measured from the actual committed
+`.BIN` files' encoded tick counts, not guessed), `TRACK_MAX_EVENTS` for
+track 16's special case (its content never naturally goes silent --
+"manually truncated" per this session's earlier notes -- so a longer
+capture window would just capture more of the same still-sustaining
+note, not more silence; matched the exact 122-event/trailing-zero-delay
+truncation already verified correct in the committed file), and a
+direct `.BIN` write via `serialize_events_to_bin()`. Spot-verified 4
+tracks (16, 1, 12, 19) against their committed files: 3 exact, track 1
+differs only in the expected hi-hat TL byte.
 
 ## Git discipline
 
