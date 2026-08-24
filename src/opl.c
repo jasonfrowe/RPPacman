@@ -1,12 +1,17 @@
 #include <rp6502.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <string.h>
 #include "opl.h"
+
+// OPL_SEEK_SET (0 on this platform's SDK) is only ever defined in stdio.h,
+// which drags in the full buffered-I/O/malloc subsystem for one
+// constant -- use the literal instead. lseek() itself comes from
+// unistd.h, already included above.
+#define OPL_SEEK_SET 0
 
 // F-number table for one octave at block 4, indexed starting at Bb (not C):
 // fnum_table[0] measures ~233.7 Hz (Bb3), not C4's 261.6 Hz. midi_to_opl_freq
@@ -248,7 +253,7 @@ static void player_open(music_player_t *p, const char *filename, bool loop) {
     // Restarting via a plain seek avoids that open()/close() churn
     // entirely for this, by far the most common, retrigger case.
     if (p->fd >= 0 && p->filename && strcmp(p->filename, filename) == 0) {
-        if (lseek(p->fd, 0, SEEK_SET) >= 0) {
+        if (lseek(p->fd, 0, OPL_SEEK_SET) >= 0) {
             p->buf_idx = 0;
             p->bytes_ready = 0;
             p->wait_ticks = 0;
@@ -392,7 +397,7 @@ static void player_advance(music_player_t *p, uint8_t ticks, uint8_t min_ch, uin
                         p->ended = true;
                         return;
                     }
-                    if (lseek(p->fd, 0, SEEK_SET) < 0) {
+                    if (lseek(p->fd, 0, OPL_SEEK_SET) < 0) {
                         p->error_state = true;
                         return;
                     }
@@ -425,7 +430,7 @@ static void player_advance(music_player_t *p, uint8_t ticks, uint8_t min_ch, uin
                     p->ended = true;
                     return;
                 }
-                if (lseek(p->fd, 0, SEEK_SET) < 0) {
+                if (lseek(p->fd, 0, OPL_SEEK_SET) < 0) {
                     p->error_state = true;
                     return;
                 }

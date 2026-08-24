@@ -1,5 +1,4 @@
 #include <rp6502.h>
-#include <stdio.h>
 #include <stdbool.h>
 #include "constants.h"
 #include "tile_mode2.h"
@@ -205,8 +204,6 @@ uint8_t frame = 0;
 
 int main(void)
 {
-    puts("Hello from RPPacMan!");
-
     input_actions_t actions;
     input_init();
 
