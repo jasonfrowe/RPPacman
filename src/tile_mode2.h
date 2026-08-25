@@ -6,19 +6,66 @@
 
 
 // Palette extracted from Sprites/Tiles.png
+// static const uint16_t maze_palette_v1[16] = {
+//     0x0000,
+//     0x0020, // black background
+//     0x21F8, // orange-red
+//     0x7C7F, // pink
+//     0x6D29, // green
+//     0x053F, // yellow -- power pellets
+//     0x78E7, // dark purple -- maze outline (6)
+//     0x82A6, // dark grey
+//     0xBAAE, // purple -- maze-outline (8)
+//     0x78E7, // beat-accent flash color (9) -- see tile_mode2_palette_update();
+//             // matches index 6's normal (non-frightened) color so this
+//             // shipped default's tiny existing tile-125 sparkle decoration
+//             // keeps flashing exactly as before.
+//     0xE6AC,
+//     0x0020, // index for animations. (11)
+//     0xFDF4,
+//     0xFFFF,
+//     0x0020,
+//     0x0020,
+// };
+
+// "remaster" branch experiment: alternate maze tile set
+// (graphics/Maze_tiles_v2.png -> images/Maze_tiles_v2_4bpp.bin) adding a
+// genuine 3rd color/accent on top of the UNCHANGED original two maze-
+// outline colors (indices 6/8 keep maze_palette's exact values, including
+// the frightened-mode color cycle -- an earlier version of this reskin
+// moved the outline colors to a new ice-blue theme and that made the
+// power-pellet/frightened palette swap far less visible, which is
+// specifically what this version restores).
+//   - Indices 6/8: same dark-purple/purple maze-outline colors as
+//     maze_palette, still swapped by set_frightened_palette_stage() during
+//     frightened mode exactly as before.
+//   - Index 9: the beat-accent's dedicated flash color -- bright icy
+//     white-cyan, deliberately independent of 6/8 so it reads as its own
+//     3rd hue rather than the outline simply relighting.
+//   - Index 11: NEW pixels added to the art (not a remap of an existing
+//     line) tracing wherever the two outline lines run close together --
+//     a thin center-fill on straights, and scattered highlights on
+//     corners/T-junctions where their curves happen to pinch tight. Sits
+//     black/invisible between beats and flashes to index 9's color for 8
+//     frames after each kick/snare/cymbal hit (tile_mode2_palette_update()),
+//     same as the maze's existing tile-125 sparkle decorations.
+// Indices 0/1/5 keep the exact same roles/values as maze_palette
+// (transparent, dot-blink black, pellet orange) -- just point the maze
+// tile ROM asset load at "ROM:mazetilesv2" and use this array instead of
+// maze_palette.
 static const uint16_t maze_palette[16] = {
     0x0000,
-    0x0020, // black background 
-    0x21F8, // orange-red
-    0x7C7F, // pink
-    0x6D29, // green
-    0x053F, // yellow -- power pellets
-    0x78E7, // dark purple -- maze outline (6)
-    0x82A6, // dark grey 
-    0xBAAE, // purple -- maze-outline (8)
-    0x972E,
+    0x0020, // black background
+    0x21F8,
+    0x7C7F,
+    0x6D29,
+    0x053F, // pellet orange -- unchanged
+    0x78E7, // dark purple -- maze outline (6), unchanged from maze_palette
+    0x82A6,
+    0xBAAE, // purple -- maze-outline (8), unchanged from maze_palette
+    0x9AAE, // purple -- dedicated beat-accent flash color (9) 0x9AAE
     0xE6AC,
-    0x0020, // index for animations. (11)
+    0x0020, // beat-flash slot -- unchanged, dynamically overwritten (11)
     0xFDF4,
     0xFFFF,
     0x0020,

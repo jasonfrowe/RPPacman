@@ -179,7 +179,6 @@ void write_text_to_text_map(uint8_t tx, uint8_t ty, const char *str) {
 }
 
 static bool s_maze_palette_black = false;
-static uint16_t s_index6_color = 0; // set by restore_maze_palette()/set_frightened_palette()
 static uint8_t s_kick_flash_timer = 0; // frames remaining for the kick-drum beat flash (index 11)
 
 void set_maze_palette_black(void) {
@@ -200,7 +199,6 @@ void restore_maze_palette(void) {
         RIA.rw0 = maze_palette[i] & 0xFF;
         RIA.rw0 = maze_palette[i] >> 8;
     }
-    s_index6_color = maze_palette[6];
 }
 
 // The 8-stage frightened outline-color cycle (indices 6/8). Ear/eye-tuned
@@ -222,8 +220,6 @@ static const uint16_t FRIGHTENED_PALETTE_STAGES[8][2] = {
 };
 
 // Writes one stage of the frightened outline-color cycle (indices 6/8).
-// s_index6_color tracks whatever index 6 currently holds -- the kick-drum
-// beat flash (index 11) mirrors it, frightened or not.
 void set_frightened_palette_stage(uint8_t stage) {
     if (stage > 7) stage = 7;
     uint16_t c8 = FRIGHTENED_PALETTE_STAGES[stage][0];
@@ -233,7 +229,6 @@ void set_frightened_palette_stage(uint8_t stage) {
     RIA.step0 = 1;
     RIA.rw0 = c6 & 0xFF;
     RIA.rw0 = c6 >> 8;
-    s_index6_color = c6;
 
     RIA.addr0 = MAZE_PALETTE_ADDR + (8 * 2);
     RIA.step0 = 1;
@@ -258,7 +253,6 @@ void set_frightened_palette(bool active) {
     RIA.step0 = 1;
     RIA.rw0 = c6 & 0xFF;
     RIA.rw0 = c6 >> 8;
-    s_index6_color = c6;
 
     RIA.addr0 = MAZE_PALETTE_ADDR + (8 * 2);
     RIA.step0 = 1;
@@ -380,17 +374,21 @@ void tile_mode2_palette_update(uint8_t frame){
     RIA.rw0 = maze_palette[color_index] & 0xFF; // Low byte of the color
     RIA.rw0 = maze_palette[color_index] >> 8;   // High byte of the color
 
-    // Beat flash (index 11): mirrors whatever index 6 currently holds
-    // (normal or frightened, via s_index6_color) for 8 frames after each
-    // real kick/snare/cymbal hit (opl_consume_kick_hit(), despite the
-    // name, isn't kick-only -- see its comment), black otherwise.
+    // Beat flash (index 11): jumps to the dedicated accent color at
+    // index 9 for 8 frames after each real kick/snare/cymbal hit
+    // (opl_consume_kick_hit(), despite the name, isn't kick-only -- see
+    // its comment), black otherwise. Deliberately its own fixed color,
+    // independent of indices 6/8 (the maze-outline colors, which the
+    // frightened cycle also drives) -- so the beat-accent reads as a
+    // genuine 3rd hue rather than the outline simply relighting, and
+    // stays consistent whether or not frightened mode is active.
     if (opl_consume_kick_hit()) {
         s_kick_flash_timer = 8;
     }
     uint16_t c11;
     if (s_kick_flash_timer > 0) {
         s_kick_flash_timer--;
-        c11 = s_index6_color;
+        c11 = maze_palette[9];
     } else {
         c11 = 0x0020;
     }

@@ -10,7 +10,7 @@ add_executable(RPPacMan)
 rp6502_asset(RPPacMan help src/help.txt)
 
 # XRAM Assets
-rp6502_asset(RPPacMan 0x10000 images/Maze_tiles_4bpp.bin)
+rp6502_asset(RPPacMan 0x10000 images/Maze_tiles_v2_4bpp.bin)
 rp6502_asset(RPPacMan 0x11000 images/Maze_map.bin)
 rp6502_asset(RPPacMan 0x11582 images/Sprites_RP6502_4bpp.bin)
 rp6502_asset(RPPacMan 0x16402 images/Fonts_RP6502_4bpp.bin)
@@ -28,6 +28,7 @@ rp6502_asset(RPPacMan congratsmap images/Congrats_map.bin)
 rp6502_asset(RPPacMan congratstiles images/Congrats_tiles_4bpp.bin) #8x8 126 frames
 rp6502_asset(RPPacMan rankingsmap images/Rankings_map.bin)
 rp6502_asset(RPPacMan rankingstiles images/Rankings_tiles_4bpp.bin) #8x8 106 frames
+# rp6502_asset(RPPacMan mazetilesv2 images/Maze_tiles_v2_4bpp.bin) #8x8 128 frames -- "ice/frost" alternate maze tile set, see maze_palette_v2 in tile_mode2.h
 
 # Music assets
 rp6502_asset(RPPacMan pacman01 music/tracks/PacManCE_01.BIN) #Game start jingle PacManCE_01.BIN
