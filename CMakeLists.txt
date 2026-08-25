@@ -32,8 +32,9 @@ rp6502_asset(RPPacMan rankingstiles images/Rankings_tiles_4bpp.bin) #8x8 106 fra
 # Music assets
 rp6502_asset(RPPacMan pacman01 music/tracks/PacManCE_01.BIN) #Game start jingle PacManCE_01.BIN
 rp6502_asset(RPPacMan pacman02 music/tracks/PacManCE_02.BIN) #Title screen music PacManCE_02.BIN
-rp6502_asset(RPPacMan pacman03 music/tracks/PacManCE_00.BIN) #Normal game music PacManCE_00.BIN
-rp6502_asset(RPPacMan pacman05 music/tracks/PacManCE_05.BIN) #Results screen music PacManCE_05.BIN
+rp6502_asset(RPPacMan pacman00 music/tracks/PacManCE_00.BIN) #Normal game music PacManCE_00.BIN
+rp6502_asset(RPPacMan pacman05 music/tracks/PacManCE_05.BIN) #Results screen music PacManCE_05.BIN (also used for Congrats screen)
+rp6502_asset(RPPacMan pacman03 music/tracks/PacManCE_03.BIN) #Ranking music PacManCE_06.BIN
 
 # SFX-channel assets (reserved OPL2 channel 5 only -- see opl2_translate.py's
 # sfx profile and opl.c's sfx_play/sfx_set_ambient). The two ambient loops

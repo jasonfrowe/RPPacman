@@ -495,10 +495,10 @@ int main(void)
                         clear_player_queued_dir();
                         set_game_motion_started(true);
 
-                        // Start playing gameplay music (PACMAN03.BIN, now
-                        // remapped in CMakeLists.txt to PacManCE_01.BIN)
+                        // Start playing gameplay music (PACMAN00.BIN, now
+                        // remapped in CMakeLists.txt to PacManCE_00.BIN)
                         s_game_bgm_playing = true;
-                        music_init("ROM:pacman03");
+                        music_init("ROM:pacman00");
                         sfx_set_ambient("ROM:sfxnormal");
                     }
                     break;
@@ -571,11 +571,11 @@ int main(void)
             update_lives_blink_animation();
             update_game_timer_display();
 
-            // Start playing gameplay music (PACMAN03.BIN, remapped to
-            // PacManCE_01.BIN) once Pac-Man begins to move
+            // Start playing gameplay music (PACMAN00.BIN, remapped to
+            // PacManCE_00.BIN) once Pac-Man begins to move
             if (!s_game_bgm_playing && is_game_motion_started()) {
                 s_game_bgm_playing = true;
-                music_init("ROM:pacman03");
+                music_init("ROM:pacman00");
                 sfx_set_ambient("ROM:sfxnormal");
             }
 
