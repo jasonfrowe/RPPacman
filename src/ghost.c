@@ -809,42 +809,6 @@ static uint8_t read_maze_tile(uint16_t tx, uint16_t ty) {
     return RIA.rw0;
 }
 
-// How far outward (in tiles, straight-line) to look for a safe tile
-// before giving up and falling back to the teleport-home recovery. The
-// maze is 47x30 tiles, so this comfortably covers any transition-caused
-// pocket without an unbounded scan.
-#define GHOST_ESCAPE_SCAN_MAX 20
-
-// Scans outward from (tx,ty) in a single direction and returns the
-// distance (in tiles) to the nearest safe tile, or 0xFF if none found
-// within GHOST_ESCAPE_SCAN_MAX. Deliberately does NOT stop at the first
-// wall/out-of-bounds tile it crosses -- a ghost stuck deep in a
-// transition-created pocket may need to cross more invalid tiles before
-// reaching real safety, and the ghost movement loop has no per-pixel
-// wall check (only at_intersection direction choices consult
-// can_step_dir), so walking through them here is safe.
-static uint8_t scan_direction_for_safe_tile(uint16_t tx, uint16_t ty, int8_t dx, int8_t dy) {
-    for (uint8_t dist = 1; dist <= GHOST_ESCAPE_SCAN_MAX; dist++) {
-        int16_t nx = (int16_t)tx + (int16_t)dx * dist;
-        int16_t ny = (int16_t)ty + (int16_t)dy * dist;
-        if (nx < 0 || nx >= MAZE_MAP_WIDTH || ny < 0 || ny >= MAZE_MAP_HEIGHT) {
-            return 0xFF;
-        }
-        // Never land a rescued ghost in the horizontal tunnel's outer
-        // padding columns (0/46) -- blank/safe by tile value almost the
-        // whole map height (confirmed by direct maze-data inspection),
-        // but not a real path for anyone outside the tunnel row itself,
-        // and the fixed-up direction-selection logic above now refuses to
-        // move a ghost vertically while standing there. Landing it there
-        // would just create a new way to get stuck instead of rescuing it.
-        if (nx == 0 || nx == MAZE_MAP_WIDTH - 1) continue;
-        if (is_ghost_safe_tile_value(read_maze_tile((uint16_t)nx, (uint16_t)ny))) {
-            return dist;
-        }
-    }
-    return 0xFF;
-}
-
 // Canonical "deliver this ghost home" sequence -- shared by the tile-
 // value-based fallback below and the progress watchdog further down.
 // Always resets mode to CHASE: reached naturally (eaten eyes arriving at
@@ -902,35 +866,51 @@ void check_and_reset_stuck_ghosts(void) {
         // standing on into a wall out from under it, not from normal
         // movement (can_step_dir already keeps ghosts from walking into a
         // wall that already exists).
+        //
+        // Deliberately simple and local: only the 4 immediate cardinal
+        // neighbors (a 1-tile radius) are ever considered -- not a
+        // long-range scan. An earlier version scanned up to 20 tiles away
+        // and handed the ghost off to normal per-frame movement to walk
+        // there; in practice that gave the normal chase-targeting logic
+        // (which runs every intersection along the way, with no idea a
+        // rescue is in progress) many tiles and many frames to fight over
+        // the ghost's direction, and confirmed live to sometimes send it
+        // through the horizontal tunnel wrap and out the far side of the
+        // map entirely. Limiting the search to one step bounds the
+        // exposure to at most a handful of frames, and if nothing safe is
+        // immediately adjacent, teleporting home is the safer choice over
+        // trying to navigate a long, contested path out.
         if (!is_ghost_safe_tile_value(tile_val)) {
-            // Walk it out toward the nearest safe tile instead of
-            // teleporting it home -- scan all 4 cardinal directions (the
-            // safe tile may be more than one step away, e.g. deep inside
-            // a transition-created pocket) and hand off to the normal
-            // per-frame movement code via g->dir.
-            static const int8_t SCAN_DX[4]  = { 0, 0, -1, 1 };
-            static const int8_t SCAN_DY[4]  = { -1, 1, 0, 0 };
-            static const int8_t SCAN_DIR[4] = { DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT };
+            static const int8_t ADJ_DX[4]  = { 0, 0, -1, 1 };
+            static const int8_t ADJ_DY[4]  = { -1, 1, 0, 0 };
+            static const int8_t ADJ_DIR[4] = { DIR_UP, DIR_DOWN, DIR_LEFT, DIR_RIGHT };
 
-            uint8_t best_dist = 0xFF;
             int8_t escape_dir = DIR_NONE;
             for (uint8_t d = 0; d < 4; d++) {
-                uint8_t dist = scan_direction_for_safe_tile(tx, ty, SCAN_DX[d], SCAN_DY[d]);
-                if (dist < best_dist) {
-                    best_dist = dist;
-                    escape_dir = SCAN_DIR[d];
+                int16_t nx = (int16_t)tx + ADJ_DX[d];
+                int16_t ny = (int16_t)ty + ADJ_DY[d];
+                if (nx < 0 || nx >= MAZE_MAP_WIDTH || ny < 0 || ny >= MAZE_MAP_HEIGHT) continue;
+                if (is_ghost_safe_tile_value(read_maze_tile((uint16_t)nx, (uint16_t)ny))) {
+                    escape_dir = ADJ_DIR[d];
+                    break;
                 }
             }
 
             if (escape_dir != DIR_NONE) {
+                // Hand off to normal per-frame movement -- a smooth,
+                // one-tile step, not a teleport. This function keeps
+                // reasserting g->dir every frame the ghost is still on an
+                // unsafe tile, so it reliably reaches the safe neighbor
+                // even if at_intersection's own targeting briefly
+                // disagrees mid-step; once there, this check stops firing
+                // and normal direction selection takes back over on its
+                // own.
                 g->dir = escape_dir;
                 continue;
             }
 
-            // No safe tile within GHOST_ESCAPE_SCAN_MAX in any direction
-            // (should be extremely rare): fall back to the old
-            // teleport-home recovery so a ghost can never get permanently
-            // stuck.
+            // No safe tile immediately adjacent: teleport home rather
+            // than risk navigating further.
             force_ghost_home((uint8_t)i);
         }
     }

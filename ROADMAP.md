@@ -58,6 +58,21 @@ rising edge on rhythm register `0xBD`'s bass-drum bit, consumed once per
 frame by `tile_mode2_palette_update()`. Palette index 11 mirrors index 6's
 current color for 8 frames after each real kick, otherwise black.
 
+**Widened to bass drum + snare + cymbal.** The flash stopped responding
+about 36 seconds into the gameplay track (`PacManCE_00.BIN`), every
+replay. Traced to real OPL2 event data, not a playback bug: the NES
+driver's DMC channel -- the signal `import_nsf.py` reads to detect kicks
+-- stops toggling off between hits from that point on, for the rest of
+the track, even though the drums keep playing with a different character
+(confirmed by ear against `track0.flac`). `track_kick_hit()` now fires on
+a 0->1 edge of the bass-drum, snare, *or* cymbal bit (`RYT_BEAT_MASK` in
+`src/opl.c`), giving the flash another voice to latch onto once the kick
+signal itself goes stale. Hi-hat/tom left out -- they don't read as "the
+beat" to a listener. Root cause (the DMC channel's real per-hit toggling
+behavior later in the track) is unresolved and would need an actual NES
+register-write trace to pin down further; parked per the user, not
+pursued this session.
+
 Also built, same session: a frightened-mode outline-color cycle. Palette
 indices 6/8 step through an 8-stage color sequence
 (`FRIGHTENED_PALETTE_STAGES` in `src/tile_mode2.c`, written by
@@ -268,6 +283,66 @@ end-to-end -- not a logic bug, a stale-constant one:
   maze's geometry changes again, re-derive both constants from the new
   wall positions the same way (see the constant's own comment in
   `src/constants.h`).
+
+### Pac-Man's own tunnel wrap: a speed-dependent miss
+
+Separately from the above, Pac-Man himself could occasionally fail to go
+through the tunnel at all -- more likely at higher levels' speeds,
+matching the user's own hypothesis. Root cause: unlike ghosts (whose
+wrap-teleport check already lives inside their per-pixel movement loop,
+so it runs after every single pixel), Pac-Man's check
+(`player_update_motion` in `src/player.c`) lived *outside* his per-pixel
+loop, evaluated once per frame using only the final post-movement
+position. At higher speeds (multiple pixels per frame), it's possible
+for Pac-Man to reach the real wall just past the wrap-eligible zone and
+get blocked (`is_blocked`, which resets `player.dir` to `DIR_NONE` and
+breaks the loop) within the *same frame* the wrap should have fired --
+so by the time the once-per-frame check ran, `dir` was already
+`DIR_NONE` and the wrap silently never triggered, leaving him stopped
+dead at the tunnel mouth. Fixed by moving the check inside the per-pixel
+loop, evaluated after every individual pixel step, matching how ghosts
+already do it.
+
+### Third round: stuck-ghost rescue, simplified to a 1-tile radius
+
+The second round's escape mechanism (scan up to 20 tiles in each
+cardinal direction, hand the ghost to normal per-frame movement to walk
+there) fixed the specific reported oscillation, but a live-tested attempt
+to also fix a related alignment issue (misaligned ghosts unable to ever
+re-evaluate a turn -- see below) exposed a much worse problem: sending a
+ghost on a long, multi-tile walk toward a distant "safe" tile gives the
+*normal* chase-targeting logic -- which runs at every intersection along
+the way and has no idea a rescue is in progress -- many tiles and many
+frames to fight over the ghost's direction. Confirmed live: this could
+send a ghost through the horizontal tunnel wrap and out the far side of
+the map entirely, visibly "warping" -- worse than the bug it was meant to
+fix. The alignment fix was reverted in full (see git history, commit
+message notes it explicitly) rather than layering another patch on top.
+
+Replaced with a much simpler design, per the user's own specification:
+`check_and_reset_stuck_ghosts()` now only ever checks the 4 immediate
+cardinal neighbors (a 1-tile radius) of a ghost standing on an unsafe
+tile -- no long-range scan. If one neighbor is safe, the ghost is handed
+off to normal movement for a smooth, one-tile step (not a teleport);
+since this function reasserts the same direction every frame the ghost
+remains unsafe, it reliably completes that single step even if
+at_intersection's own targeting briefly disagrees, and once safe, this
+check stops firing and normal targeting resumes on its own. If *no*
+neighbor is safe, the ghost teleports home (`force_ghost_home()`)
+immediately, rather than attempting to navigate further. Bounding the
+search to one step bounds the exposure to at most a handful of frames,
+closing off the tug-of-war entirely. Confirmed working live: both the
+smooth-rescue and the send-home paths were observed directly in play.
+`scan_direction_for_safe_tile()` and `GHOST_ESCAPE_SCAN_MAX` are removed
+-- no longer used.
+
+The alignment issue this round's fix was *originally* chasing (a ghost
+that arrives misaligned -- e.g. a maze-transition column reveal
+materializing a wall mid-transit, not necessarily at a tile boundary --
+can never satisfy `at_intersection`'s `world_px%8==0 && world_py%8==0`
+again while moving in a straight line on the misaligned axis, so it can
+sail straight past a real, open intersection forever) is not addressed
+by this round's fix and remains a known, unresolved risk if it recurs.
 
 ## Game restart
 
