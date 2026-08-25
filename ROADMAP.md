@@ -1,7 +1,7 @@
 # RPPacMan Roadmap
 
-Updated: 2026-08-24
-Branch: main
+Updated: 2026-08-25
+Branch: hiscores
 
 Big-picture task list for finishing Pac-Man CE beyond the music work tracked
 in `Plan.md` (which stays scoped to the NSF->OPL2 translation effort). We are
@@ -9,8 +9,9 @@ close to a complete game loop for Normal mode; this is what's left.
 
 ## Status: Normal mode
 
-Playable end-to-end (title -> menu -> maze -> game over -> title). Missing
-before it's "done":
+Playable end-to-end (title -> menu -> maze -> game over -> results ->
+[congrats -> rankings if a top-10 score] -> title). Missing before it's
+"done":
 
 ### i. Sound effects in Normal mode -- DONE
 
@@ -33,8 +34,7 @@ in `src/main.c`) but OPTIONS itself has no submenu yet. Sub-items:
 
 - **ii-a. Achievements** -- track milestones (needs a persistence story;
   RP6502 has no battery-backed save by default, check what's available).
-- **ii-b. Ranking** -- track and display high scores (also needs
-  persistence).
+- **ii-b. Ranking** -- track and display high scores -- DONE, see (vii).
 - **ii-c. Replay Normal** (stretch) -- rewatch the last Normal-mode game.
   Needs an input/event log recorded during play, replayed through the
   same deterministic update loop.
@@ -110,11 +110,57 @@ punch a black gap in a taller earlier one -- `images/Results_tiles_4bpp.bin`
 now has 153 tiles (was 132) to cover the base + blend sets. Bars fill
 bottom-to-top, one at a time, animated.
 
-### vii. Ranking screen
+### vii. Ranking screen -- DONE
 
-Appears after Results. Depends on (ii-b)'s persistence story. Results
-totals/histogram (vi) don't persist across sessions -- this is purely
-end-of-run, matching what was actually asked for.
+Persistent top-10 high-score table, `RPPacMan.hiscores` (10 x
+`{score, initials[3]}`, `src/hiscores.c`/`hiscores.h`, new files), written
+with the same lightweight `open()`/`read()`/`write()`/`close()` I/O as the
+rest of the codebase (no `stdio.h` reintroduced -- see "Code size" below).
+A bare filename with no drive prefix resolves to the default drive,
+matching RPMegaFighter's own `HIGHSCOR.DAT` precedent from an earlier
+project; `ROM:` is not a real drive prefix, only `MSC0:`-`MSC9:` are, but
+ROM assets (`open("ROM:...")`) are unaffected since those go through a
+separate asset-table lookup, not a real filesystem path.
+
+Flow, from the results screen: pressing start/fire on
+`RESULTS_WAIT_FOR_START` calls `hiscores_find_rank(player.score)`; a
+qualifying score hands off to a new `STATE_CONGRATS`
+(`src/congrats.c`/`congrats.h`, new files) instead of returning to the
+title. Congrats fades in the `congratsmap`/`congratstiles` ROM assets
+(background art only), shows the rank/score banner and a 3-letter
+initials entry (up/down cycles A-Z, fire advances/confirms, matching
+`RPMegaFighter`'s own precedent of not needing left/right for this),
+calls `hiscores_insert()` on the third confirm, then fades to a new
+`STATE_RANKINGS` showing all 10 entries and `pacman03` (the renamed
+high-score-screen track) before returning to the title via the shared
+`return_to_title_from_post_game()` helper (extracted from `results.c`,
+also used by its own return path).
+
+All dynamic text on both new screens (rank/score banner, initials,
+rankings list) renders through the existing `TEXT_MAP_DATA`/
+`FONT_TILES_DATA` font layer (`write_text_to_text_map()`, extended with
+`_`/`s`/`t`/`n`/`d`/`h` for ordinal suffixes -- `'r'` has no glyph in this
+font, so "3rd" is written as "3nd"), not the new screens' own
+`TITLE_MAP_DATA`/`TITLE_TILES_DATA` background art. Confirmed by directly
+rendering both tilesets' actual pixel content (4bpp decode + palette) that
+`Congrats_tiles_4bpp.bin`/`Results_tiles_4bpp.bin` are composite artwork
+fragments at low tile indices, not a font -- an initial implementation
+assumed otherwise (matching how `results.c`'s own `draw_totals()` writes
+digit tiles into `TITLE_MAP_DATA`) and rendered nothing legible until
+corrected. **This suggests `results.c`'s own score-totals digits may have
+the same latent mismatch** -- not fixed, out of scope for this branch,
+flagged for a future look.
+
+The title screen's "HI" digits (`first_line_data`'s second placeholder
+run, `src/tile_mode2.c`) now show the real persisted top score at boot
+(`init_tilemap_edges()` calls the new `update_hiscore_display()`) and
+live-update mid-run: `add_player_score()` (`src/player.c`) checks the
+running score against `hiscores_get_score(0)` every time it's called and
+refreshes the HI digits immediately once the current run passes it,
+rather than waiting for game over -- matching classic arcade behavior.
+The persisted table itself still only updates via `hiscores_insert()`
+from the congrats flow if the run's *final* score actually makes the top
+10.
 
 ## Speed calibration
 
@@ -347,8 +393,26 @@ by this round's fix and remains a known, unresolved risk if it recurs.
 ## Game restart
 
 Starting a new game from the title menu (`TITLE_SUBSTATE_GAME_START_BLACK_18`
-in `src/main.c`) had two separate bugs, both now fixed:
+in `src/main.c`) had four separate bugs, all now fixed:
 
+- **Stale death-animation timer.** If a game ended (e.g. the 5-minute
+  timer expiring) while Pac-Man's 305-frame death sequence
+  (`s_death_seq_timer` in `src/ghost.c`) was still counting down, nothing
+  ever reset it -- so the *next* game started with Pac-Man instantly
+  replaying the tail of the previous game's death animation. Fixed with a
+  new, narrowly-scoped `reset_death_sequence()` (`src/ghost.c`/`ghost.h`),
+  called only from the new-game-start block. Deliberately **not** folded
+  into `reset_ghosts_to_initial_positions()`, which is also called
+  mid-sequence (at t==172, to send ghosts home for the bounce phase) --
+  clearing the timer there would abort phases 4/5 of an otherwise-normal
+  life-loss partway through.
+- **Escalated extra-life threshold carried over.** `s_next_extra_life_threshold`
+  (`src/player.c`) only ever increases (+20000 per life awarded) and was
+  never reset, so a fresh game inherited whatever escalated threshold the
+  *previous* game in the same session had reached -- the player could
+  end up unable to earn another extra life at the normal 20000-point mark.
+  Fixed with a new `reset_extra_life_threshold()` (`src/player.c`/
+  `player.h`), called from the same new-game-start block.
 - **`maze_dx`** (the horizontal endless-scroll offset, `src/tile_mode2.c`)
   is a global that `player_update_motion()` normally recomputes every
   gameplay frame -- but nothing reset it on restart. It stayed at
@@ -504,11 +568,14 @@ once regenerated.
 1. Build the OPTIONS submenu shell (ii), starting with Sound Test since it
    forces every track to actually be reachable in-game (including 03/04/05/
    07's wide-profile tracks and the un-triggered 08-11/17 stingers, none of
-   which are reachable in-game yet).
+   which are reachable in-game yet). Only ii-a (Achievements) remains
+   unbuilt in this submenu now that ii-b (Ranking) is done.
 2. Extra mode (iii) -- blocked on new maps/assets, not audio.
-3. Ranking screen (vii) -- needs a persistence story first (also blocks
-   ii-a/ii-b). Results (v/vi) are done and don't need it.
-4. Results histogram's black-gap-on-overlap visuals (vi) are functional
+3. Results histogram's black-gap-on-overlap visuals (vi) are functional
    but the blend-tile z-order compositing could still use a closer look
    once there's real playtest data to look at (organic play rarely earns
    enough in one 10s window to show much).
+4. `results.c`'s own `draw_totals()` digit tiles may share the same
+   TITLE_MAP-vs-TEXT_MAP font mismatch discovered and fixed on the new
+   congrats/rankings screens (vii) -- not confirmed broken, not fixed,
+   worth a direct look next time that screen is touched.

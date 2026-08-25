@@ -8,6 +8,7 @@
 #include "prizes.h"
 #include "ghost.h"
 #include "opl.h"
+#include "hiscores.h"
 
 static int8_t queued_dir = DIR_NONE;
 
@@ -184,6 +185,14 @@ static void update_score_popups(void) {
 
 static uint32_t s_next_extra_life_threshold = 20000;
 
+// Only ever increases as extra lives are awarded within a run, so a fresh
+// game must reset it explicitly -- otherwise it carries over an escalated
+// threshold from a previous game in the same session, and the player can
+// never earn another extra life.
+void reset_extra_life_threshold(void) {
+    s_next_extra_life_threshold = 20000;
+}
+
 // Points earned per 10-second interval per category, for the results
 // screen's histogram. Indexed by get_game_elapsed_frames()/600, clamped
 // to the last bucket -- the game's own 5-minute cap (18000 frames) means
@@ -207,6 +216,17 @@ void add_player_score(uint32_t pts, uint8_t category) {
     player.score += pts;
     player.score_by_cat[category] += pts;
     update_player_score_display(player.score);
+
+    // Live "HI" score tracking: once the current run passes the
+    // persisted all-time top score, show the running score there instead
+    // -- matches classic arcade behavior where the HI digits update in
+    // real time rather than waiting for game-over. The persisted table
+    // itself is only updated later, via hiscores_insert() from the
+    // congrats screen if this run's final score actually makes the
+    // top 10.
+    if (player.score > hiscores_get_score(0)) {
+        update_hiscore_display(player.score);
+    }
 
     uint16_t bucket = get_game_elapsed_frames() / 600;
     if (bucket >= SCORE_HISTORY_BUCKETS) bucket = SCORE_HISTORY_BUCKETS - 1;

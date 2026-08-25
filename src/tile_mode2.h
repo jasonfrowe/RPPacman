@@ -84,6 +84,7 @@ void restore_font_palette(void);
 void set_font_palette_scaled(uint8_t num, uint8_t den);
 
 void update_player_score_display(uint32_t score);
+void update_hiscore_display(uint32_t score);
 void update_player_lives_display(uint8_t lives);
 void trigger_extra_life_blink(void);
 void update_lives_blink_animation(void);

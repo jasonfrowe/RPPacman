@@ -10,3 +10,4 @@ tools/rp6502-emu*
 .cache
 captures/
 .DS_Store
+/RPPacMan.hiscores

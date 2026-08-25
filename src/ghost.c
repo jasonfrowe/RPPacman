@@ -916,6 +916,18 @@ void check_and_reset_stuck_ghosts(void) {
     }
 }
 
+// Forces the Pac-Man death-animation sequence off, independent of
+// reset_ghosts_to_initial_positions() (which is also called mid-sequence,
+// at t==172, to send ghosts home for the bounce phase -- clearing the
+// timer there would abort phases 4/5 partway through). Only a genuine
+// new-game start needs this: a game that ends (e.g. the 5-minute timer
+// expiring) while the timer is still counting down would otherwise leave
+// it non-zero, causing the next game to start with Pac-Man instantly
+// replaying the tail of the previous death animation.
+void reset_death_sequence(void) {
+    s_death_seq_timer = 0;
+}
+
 void reset_ghosts_to_initial_positions(void) {
     init_ghost_data();
     s_initial_exit_idx = 0;

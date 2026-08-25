@@ -10,11 +10,15 @@
 #include "opl.h"
 #include "title_anim.h"
 #include "results.h"
+#include "hiscores.h"
+#include "congrats.h"
 
 typedef enum {
     STATE_TITLE,
     STATE_GAMEPLAY,
-    STATE_RESULTS
+    STATE_RESULTS,
+    STATE_CONGRATS,
+    STATE_RANKINGS
 } game_state_t;
 
 typedef enum {
@@ -131,6 +135,16 @@ void start_results_screen(void) {
     results_init();
 }
 
+void start_congrats_screen(int8_t rank) {
+    s_game_state = STATE_CONGRATS;
+    congrats_init(rank);
+}
+
+void start_rankings_screen(void) {
+    s_game_state = STATE_RANKINGS;
+    rankings_init();
+}
+
 void start_normal_game(void) {
     s_game_state = STATE_GAMEPLAY;
     s_game_bgm_playing = false;
@@ -206,6 +220,11 @@ int main(void)
 {
     input_actions_t actions;
     input_init();
+
+    // Must run before init_graphics() -- tile_mode2_text_map_init() ->
+    // init_tilemap_edges() draws the persisted top score into the "HI"
+    // slot immediately.
+    hiscores_load();
 
     // Initialise audio hardware
     OPL_Config(1, OPL_ADDR);
@@ -424,6 +443,7 @@ int main(void)
 
                         // Reset ghosts, maze, and player to starting positions
                         reset_ghosts_to_initial_positions();
+                        reset_death_sequence();
                         reset_prizes_and_mazes_level();
 
                         player.score = 0;
@@ -431,6 +451,7 @@ int main(void)
                         player.score_by_cat[SCORE_CAT_PRIZE] = 0;
                         player.score_by_cat[SCORE_CAT_GHOST] = 0;
                         reset_score_history();
+                        reset_extra_life_threshold();
                         player.pellets_eaten = 0;
                         player.lives = 3;
                         player.dir = DIR_NONE;
@@ -586,8 +607,12 @@ int main(void)
                 // Update maze palette animation
                 tile_mode2_palette_update(frame);
             }
-        } else { // STATE_RESULTS
+        } else if (s_game_state == STATE_RESULTS) {
             results_update(press_start);
+        } else if (s_game_state == STATE_CONGRATS) {
+            congrats_update(press_up, press_down, press_action);
+        } else { // STATE_RANKINGS
+            rankings_update(press_start || press_action);
         }
 
         frame++;

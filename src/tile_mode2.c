@@ -5,6 +5,7 @@
 #include "constants.h"
 #include "ghost.h"
 #include "opl.h"
+#include "hiscores.h"
 
 unsigned MAZE_CONFIG;
 unsigned TEXT_MAP_CONFIG;
@@ -66,11 +67,17 @@ void init_tilemap_edges(void) {
 
     // --- Write the LAST line (Row 13) ---
     // Calculate the start address of Row 13: Base + ((Height - 2) * Width)
-    RIA.addr0 = TEXT_MAP_DATA + ((TEXT_MAP_HEIGHT - 2) * TEXT_MAP_WIDTH); 
+    RIA.addr0 = TEXT_MAP_DATA + ((TEXT_MAP_HEIGHT - 2) * TEXT_MAP_WIDTH);
     RIA.step0 = 1;
     for (int i = 0; i < TEXT_MAP_WIDTH; i++) {
         RIA.rw0 = last_line_data[i];
     }
+
+    // first_line_data's own placeholder for this is all zeros (digit-0
+    // tiles) -- overwrite with the real persisted top score so it's
+    // correct immediately, both at boot and whenever this is called again
+    // returning to the title screen.
+    update_hiscore_display(hiscores_get_score(0));
 }
 
 void tile_mode2_text_map_init(void) {
@@ -150,6 +157,18 @@ void write_text_to_text_map(uint8_t tx, uint8_t ty, const char *str) {
             tile_idx = 37 + (c - '1'); // 1=37 .. 9=45
         } else if (c == '0') {
             tile_idx = 46; // 0=46
+        } else if (c == '_') {
+            tile_idx = 36;
+        } else if (c == 's') {
+            tile_idx = 47;
+        } else if (c == 't') {
+            tile_idx = 48;
+        } else if (c == 'n') {
+            tile_idx = 49;
+        } else if (c == 'd') {
+            tile_idx = 50;
+        } else if (c == 'h') {
+            tile_idx = 51;
         } else if (c == ' ') {
             tile_idx = 0; // blank
         }
@@ -397,6 +416,32 @@ void update_player_score_display(uint32_t score) {
     }
 
     RIA.addr0 = TEXT_MAP_DATA + 9;
+    RIA.step0 = 1;
+    for (uint8_t i = 0; i < 7; i++) {
+        RIA.rw0 = digits[i];
+    }
+}
+
+// 7-digit "HI" score at indices 28 through 34 on row 0 of TEXT_MAP_DATA
+// (the second run of 7 placeholder tiles in first_line_data -- "1UP" and
+// its own score sit at indices 5-15, "HI" and this one follow at 19-34).
+// Same digit_tile_map as update_player_score_display() above.
+void update_hiscore_display(uint32_t score) {
+    static const uint8_t digit_tile_map[10] = {
+        46, 37, 38, 39, 40, 41, 42, 43, 44, 45
+    };
+
+    uint8_t digits[7];
+    uint32_t val = score;
+
+    for (int8_t i = 6; i >= 0; i--) {
+        uint32_t next_val = val / 10;
+        uint8_t rem = (uint8_t)(val - (next_val * 10));
+        digits[i] = digit_tile_map[rem];
+        val = next_val;
+    }
+
+    RIA.addr0 = TEXT_MAP_DATA + 28;
     RIA.step0 = 1;
     for (uint8_t i = 0; i < 7; i++) {
         RIA.rw0 = digits[i];

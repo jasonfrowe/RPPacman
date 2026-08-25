@@ -9,7 +9,8 @@
 #include "sprite_mode5.h"
 #include "player.h"
 #include "opl.h"
-#include "ghost.h" // start_warm_title_screen() -- defined in main.c, declared here like start_results_screen()
+#include "ghost.h" // start_warm_title_screen()/start_congrats_screen() -- defined in main.c, declared here like start_results_screen()
+#include "hiscores.h"
 
 typedef enum {
     RESULTS_FADE_TO_SCORE_ONLY,
@@ -119,7 +120,7 @@ static void blank_text_map_except_score(void) {
     }
 }
 
-static void blank_text_map_all(void) {
+void blank_text_map_all(void) {
     RIA.addr0 = TEXT_MAP_DATA;
     RIA.step0 = 1;
     for (uint16_t i = 0; i < (uint16_t)TEXT_MAP_WIDTH * TEXT_MAP_HEIGHT; i++) RIA.rw0 = 0;
@@ -348,31 +349,45 @@ void results_update(bool press_start) {
 
         case RESULTS_WAIT_FOR_START: {
             if (press_start) {
-                s_substate = RESULTS_RETURN_TO_TITLE;
-                s_timer = 0;
+                // A qualifying score hands off to the congrats screen
+                // (initials entry, then the rankings table) instead of
+                // going straight back to the title.
+                int8_t rank = hiscores_find_rank(player.score);
+                if (rank >= 0) {
+                    start_congrats_screen(rank);
+                } else {
+                    s_substate = RESULTS_RETURN_TO_TITLE;
+                    s_timer = 0;
+                }
             }
             break;
         }
 
         case RESULTS_RETURN_TO_TITLE: {
-            load_rom_asset_to_xram("ROM:titlemap", TITLE_MAP_DATA, TITLE_MAP_DATA_SIZE);
-            load_rom_asset_to_xram("ROM:titletile", TITLE_TILES_DATA, TITLE_TILES_DATA_SIZE);
-            // start_warm_title_screen() never blanks TEXT_MAP_DATA -- it
-            // only overwrites specific rows for the menu text, assuming
-            // whatever gameplay left in the other rows is harmless. Our
-            // 4 score-total digit runs (rows 3-4) aren't; clear them so
-            // they don't reappear once the font palette fades back in.
-            blank_text_map_all();
-            // blank_text_map_all() also wipes row 0's "1UP"/"HI" labels
-            // and row 13's Pac-Man/x lives-count marker -- static chrome
-            // that init_tilemap_edges() only ever draws once, at boot
-            // (tile_mode2_text_map_init()), since nothing else normally
-            // touches those rows outside the score/lives digit fields it
-            // deliberately leaves alone. Redraw it now that this is no
-            // longer true.
-            init_tilemap_edges();
-            start_warm_title_screen();
+            return_to_title_from_post_game();
             break;
         }
     }
+}
+
+void return_to_title_from_post_game(void) {
+    load_rom_asset_to_xram("ROM:titlemap", TITLE_MAP_DATA, TITLE_MAP_DATA_SIZE);
+    load_rom_asset_to_xram("ROM:titletile", TITLE_TILES_DATA, TITLE_TILES_DATA_SIZE);
+    // start_warm_title_screen() never blanks TEXT_MAP_DATA -- it only
+    // overwrites specific rows for the menu text, assuming whatever
+    // gameplay (or results/congrats/rankings) left in the other rows is
+    // harmless. Results' 4 score-total digit runs (rows 3-4) aren't;
+    // clear them so they don't reappear once the font palette fades back
+    // in.
+    blank_text_map_all();
+    // blank_text_map_all() also wipes row 0's "1UP"/"HI" labels and row
+    // 13's Pac-Man/x lives-count marker -- static chrome that
+    // init_tilemap_edges() only ever draws once, at boot
+    // (tile_mode2_text_map_init()), since nothing else normally touches
+    // those rows outside the score/lives digit fields it deliberately
+    // leaves alone. Redraw it now that this is no longer true -- this
+    // also refreshes the "HI" score display in case this run's score
+    // just became (or improved) the new #1.
+    init_tilemap_edges();
+    start_warm_title_screen();
 }
