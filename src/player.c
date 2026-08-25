@@ -532,6 +532,42 @@ void player_update_motion(const input_actions_t *actions) {
                 player.world_px = next_px;
                 player.world_py = next_py;
 
+                // Vertical tunnel wrapping using Pac-Man's drawn screen
+                // position. Checked after every single pixel step (not
+                // once per frame after this loop) -- at higher speeds
+                // (multiple pixels per frame), Pac-Man could reach the
+                // real wall just past the wrap-eligible zone and get
+                // blocked (is_blocked above, which sets player.dir to
+                // DIR_NONE and breaks out of this loop) within the SAME
+                // frame the wrap should have fired. A once-per-frame
+                // check running only after the loop would then see
+                // player.dir already reset to DIR_NONE and never fire,
+                // leaving Pac-Man stopped dead at the tunnel mouth
+                // instead of wrapping through -- reproducible only at
+                // higher levels' speeds, matching reports of the tunnel
+                // occasionally not working.
+                //
+                // Only taken when the destination tile is verified safe
+                // -- the jump only lands on open floor at the handful of
+                // columns where the top and bottom border rows are both
+                // unwalled at that column (see the matching guard in
+                // ghost.c's update_ghost_outside_movement for the full
+                // explanation). At any other column, skip the jump and
+                // let the normal per-pixel wall check (is_blocked, above)
+                // stop Pac-Man at the real border wall instead.
+                int16_t drawn_y_step = player.world_py + VISUAL_Y_OFFSET;
+                if (player.dir == DIR_DOWN && (drawn_y_step + SPRITE_SIZE_PX) >= VERTICAL_TUNNEL_TRIGGER_BOTTOM_DRAWN_Y) {
+                    int16_t wrapped_py = player.world_py - VERTICAL_TUNNEL_WRAP_PX;
+                    if (is_safe_landing_tile(player.world_px, wrapped_py)) {
+                        player.world_py = wrapped_py;
+                    }
+                } else if (player.dir == DIR_UP && drawn_y_step <= VERTICAL_TUNNEL_TRIGGER_TOP_DRAWN_Y) {
+                    int16_t wrapped_py = player.world_py + VERTICAL_TUNNEL_WRAP_PX;
+                    if (is_safe_landing_tile(player.world_px, wrapped_py)) {
+                        player.world_py = wrapped_py;
+                    }
+                }
+
                 // Check and eat pellets/prizes on every 1px step to ensure no pickups are skipped
                 check_and_eat_pellet(player.world_px, player.world_py);
             } else {
@@ -592,28 +628,6 @@ void player_update_motion(const input_actions_t *actions) {
         player.world_px += WORLD_WIDTH;
     } else if (player.world_px >= WORLD_WIDTH) {
         player.world_px -= WORLD_WIDTH;
-    }
-
-    // Vertical tunnel wrapping using Pac-Man's drawn screen position (world_py + VISUAL_Y_OFFSET).
-    // Only taken when the destination tile is verified safe -- the jump
-    // only lands on open floor at the handful of columns where the top
-    // and bottom border rows are both unwalled at that column (see the
-    // matching guard in ghost.c's update_ghost_outside_movement for the
-    // full explanation). At any other column, skip the jump and let the
-    // normal per-pixel wall check (is_blocked, above) stop Pac-Man at the
-    // real border wall instead.
-    int16_t drawn_y = player.world_py + VISUAL_Y_OFFSET;
-
-    if (player.dir == DIR_DOWN && (drawn_y + SPRITE_SIZE_PX) >= VERTICAL_TUNNEL_TRIGGER_BOTTOM_DRAWN_Y) {
-        int16_t wrapped_py = player.world_py - VERTICAL_TUNNEL_WRAP_PX;
-        if (is_safe_landing_tile(player.world_px, wrapped_py)) {
-            player.world_py = wrapped_py; // Moving down: bottom of drawn sprite hits the bottom shaft wall -> shift up
-        }
-    } else if (player.dir == DIR_UP && drawn_y <= VERTICAL_TUNNEL_TRIGGER_TOP_DRAWN_Y) {
-        int16_t wrapped_py = player.world_py + VERTICAL_TUNNEL_WRAP_PX;
-        if (is_safe_landing_tile(player.world_px, wrapped_py)) {
-            player.world_py = wrapped_py; // Moving up: top of drawn sprite hits the top shaft wall -> shift down
-        }
     }
 
     // Screen Y tracks world Y with visual offset

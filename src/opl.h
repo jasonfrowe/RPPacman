@@ -46,9 +46,11 @@ extern void sfx_play(const char* filename);
 extern void sfx_stop(void);
 extern void update_sfx_advance(uint8_t ticks);
 
-// Returns true once for each real kick-drum hit (rhythm register 0xBD's
-// bass-drum bit going 0->1) written by the gameplay music since the last
-// call, then clears the flag -- call exactly once per frame.
+// Returns true once for each real beat hit -- rhythm register 0xBD's
+// bass-drum, snare, or cymbal bit going 0->1 (whichever one is currently
+// carrying the beat; not every rhythm voice toggles for the whole track,
+// see track_kick_hit's comment in opl.c) -- written by the gameplay music
+// since the last call, then clears the flag -- call exactly once per frame.
 extern bool opl_consume_kick_hit(void);
 extern void OPL_SetPatch(uint8_t channel, const OPL_Patch* patch);
 extern void shutdown_audio(void);

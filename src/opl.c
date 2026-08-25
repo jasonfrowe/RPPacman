@@ -227,14 +227,37 @@ static bool player_reg_allowed(uint8_t reg, uint8_t min_ch, uint8_t max_ch) {
     return true;
 }
 
+// Preserves any unconsumed leftover bytes (buf_idx..bytes_ready) at the
+// front of the buffer before reading more to fill the rest. This matters
+// because events are a fixed 4 bytes each but MUSIC_BUF_SIZE-sized reads
+// aren't guaranteed to land on a 4-byte boundary -- read()'s own docs
+// don't promise a full-count read before EOF (nothing in the RP6502-OS
+// reference guarantees it, and ROM: isn't even a documented drive there
+// at all, only MSC0:-9: are). A short read that ends mid-event used to
+// have its trailing 1-3 bytes silently discarded here, since the next
+// refill overwrote the whole buffer from buf_idx 0 -- permanently
+// shifting the byte alignment of every (reg,val,delay) tuple parsed from
+// that point on. That's a plausible, fully deterministic explanation for
+// reports of specific instruments/effects (e.g. the kick-drum's rhythm
+// register) going silent partway through a track and never recovering:
+// once misaligned, the stream never re-syncs on its own.
+//
+// Callers that are about to read from a DIFFERENT file position (the
+// loop-restart paths in player_advance, after lseek() back to the start)
+// must reset buf_idx/bytes_ready to 0 first -- otherwise this would
+// wrongly prepend stale bytes from the old position onto the new one.
 static bool player_refill_buffer(music_player_t *p) {
-    int res = read(p->fd, p->buffer, MUSIC_BUF_SIZE);
+    uint16_t leftover = (p->bytes_ready > p->buf_idx) ? (p->bytes_ready - p->buf_idx) : 0;
+    if (leftover > 0 && p->buf_idx > 0) {
+        memmove(p->buffer, p->buffer + p->buf_idx, leftover);
+    }
+    int res = read(p->fd, p->buffer + leftover, MUSIC_BUF_SIZE - leftover);
     if (res < 0) {
         p->error_state = true;
         return false;
     }
     p->buf_idx = 0;
-    p->bytes_ready = (uint16_t)res;
+    p->bytes_ready = leftover + (uint16_t)res;
     return true;
 }
 
@@ -313,25 +336,38 @@ static void player_stop(music_player_t *p) {
     p->tempo_acc = 0;
 }
 
-// Kick-drum beat detection for the palette-flash effect (tile_mode2.c).
-// Register 0xBD's bit 4 is the rhythm-mode bass-drum key-on flag; only
-// the gameplay music's own .BIN stream ever writes 0xBD at all (SFX
-// tracks skip rhythm_setup() entirely, and nothing else writes raw
-// register bytes through this path), so hooking it here needs no extra
-// bookkeeping about which player is calling. A real kick is a 0->1
-// transition on that bit specifically -- the translator always writes a
-// bit-clearing "off" value immediately before the "on" value when
-// forcing a fresh retrigger (see opl2_translate.py's process_rhythm),
-// but once set, bit 4 otherwise stays set across unrelated hi-hat/snare/
-// tom/cymbal retriggers until the next real kick, so testing "is the bit
-// set" alone would fire on every one of those too.
-#define RYT_BD_BIT 0x10
+// Beat detection for the palette-flash effect (tile_mode2.c). Register
+// 0xBD's bits are the rhythm-mode voices' key-on flags; only the gameplay
+// music's own .BIN stream ever writes 0xBD at all (SFX tracks skip
+// rhythm_setup() entirely, and nothing else writes raw register bytes
+// through this path), so hooking it here needs no extra bookkeeping about
+// which player is calling. A real hit is a 0->1 transition on one of
+// these bits specifically -- the translator always writes a bit-clearing
+// "off" value immediately before the "on" value when forcing a fresh
+// retrigger (see opl2_translate.py's process_rhythm), but once set, a bit
+// otherwise stays set across unrelated retriggers of the OTHER rhythm
+// voices until its own next hit, so testing "is the bit set" alone would
+// fire on every one of those too.
+//
+// Originally bass-drum only, widened to bass drum + snare + cymbal after
+// a real, confirmed case (music/tracks/PacManCE_00.BIN, ~35.55s in) where
+// the NES driver's DMC channel -- the source import_nsf.py reads to
+// detect kicks -- stops toggling off between hits for the rest of the
+// track, even though the drums keep playing (confirmed by ear against
+// track0.flac: the kick's *character* changes there, it doesn't stop).
+// Snare/cymbal give the flash somewhere else to latch onto when that
+// happens, rather than going dark for the rest of a track. Left off:
+// hi-hat and tom, since they're not what "beat" reads as to a listener.
+#define RYT_BD_BIT  0x10
+#define RYT_SD_BIT  0x08
+#define RYT_CYM_BIT 0x02
+#define RYT_BEAT_MASK (RYT_BD_BIT | RYT_SD_BIT | RYT_CYM_BIT)
 static uint8_t s_prev_rhythm_reg = 0x00;
 static bool s_kick_hit_pending = false;
 
 static void track_kick_hit(uint8_t reg, uint8_t val) {
     if (reg != 0xBD) return;
-    if ((val & RYT_BD_BIT) && !(s_prev_rhythm_reg & RYT_BD_BIT)) {
+    if (val & RYT_BEAT_MASK & (uint8_t)~s_prev_rhythm_reg) {
         s_kick_hit_pending = true;
     }
     s_prev_rhythm_reg = val;
@@ -434,6 +470,12 @@ static void player_advance(music_player_t *p, uint8_t ticks, uint8_t min_ch, uin
                     p->error_state = true;
                     return;
                 }
+                // Jumping to a different file position -- any bytes still
+                // sitting in the buffer belong to the OLD position and
+                // must not be carried over by player_refill_buffer()'s
+                // leftover-preserving logic.
+                p->buf_idx = 0;
+                p->bytes_ready = 0;
                 if (!player_refill_buffer(p)) {
                     return;
                 }

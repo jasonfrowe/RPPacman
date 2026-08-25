@@ -359,9 +359,10 @@ void tile_mode2_palette_update(uint8_t frame){
     RIA.rw0 = maze_palette[color_index] & 0xFF; // Low byte of the color
     RIA.rw0 = maze_palette[color_index] >> 8;   // High byte of the color
 
-    // Kick-drum beat flash (index 11): mirrors whatever index 6 currently
-    // holds (normal or frightened, via s_index6_color) for 8 frames after
-    // each real kick hit, black otherwise.
+    // Beat flash (index 11): mirrors whatever index 6 currently holds
+    // (normal or frightened, via s_index6_color) for 8 frames after each
+    // real kick/snare/cymbal hit (opl_consume_kick_hit(), despite the
+    // name, isn't kick-only -- see its comment), black otherwise.
     if (opl_consume_kick_hit()) {
         s_kick_flash_timer = 8;
     }
