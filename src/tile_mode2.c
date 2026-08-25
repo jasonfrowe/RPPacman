@@ -167,8 +167,10 @@ void write_text_to_text_map(uint8_t tx, uint8_t ty, const char *str) {
             tile_idx = 49;
         } else if (c == 'd') {
             tile_idx = 50;
-        } else if (c == 'h') {
+        } else if (c == 'r') {
             tile_idx = 51;
+        } else if (c == 'h') {
+            tile_idx = 52;
         } else if (c == ' ') {
             tile_idx = 0; // blank
         }

@@ -49,12 +49,10 @@ static int8_t s_rank;    // 0-based (0 = 1st place)
 static uint8_t s_cursor; // 0..2, which initial is currently being edited
 static char s_initials[3];
 
-// 'r' has no tile in this set -- "3rd" is written as "3nd" per the user's
-// own instruction rather than guess at a substitute glyph.
 static void ordinal_suffix(uint8_t rank1based, char out[2]) {
     if (rank1based == 1) { out[0] = 's'; out[1] = 't'; }
     else if (rank1based == 2) { out[0] = 'n'; out[1] = 'd'; }
-    else if (rank1based == 3) { out[0] = 'n'; out[1] = 'd'; }
+    else if (rank1based == 3) { out[0] = 'r'; out[1] = 'd'; }
     else { out[0] = 't'; out[1] = 'h'; }
 }
 
