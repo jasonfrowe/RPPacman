@@ -41,6 +41,20 @@ typedef struct {
 
 static maze_transition_t s_transitions[2]; // Index 0: Left side, Index 1: Right side
 
+// Tracks whether either side had an active transition as of the last
+// update_maze_munchers_animation() call, purely to notice the "was
+// active, now isn't" edge and park munchers off-screen exactly once
+// there (each transition's own "sweep finished" cleanup already handles
+// the common case -- this only catches a transition that stopped being
+// active some other way, e.g. reset_prizes_and_mazes_level()'s memset).
+// Previously this lived as two same-named `static bool`s shadowing each
+// other across an early return inside update_maze_munchers_animation()
+// itself, so the one meant to catch this edge could never actually see
+// `true` and this cleanup was dead code -- fixed by hoisting to one
+// function-scope static (also why reset_prizes_and_mazes_level() now
+// parks munchers directly rather than relying on this edge firing).
+static bool s_munchers_were_active = false;
+
 void reset_prizes_and_mazes_level(void) {
     left_side_level = 0;
     right_side_level = 0;
@@ -54,6 +68,7 @@ void reset_prizes_and_mazes_level(void) {
 
     // Reset maze transitions
     memset(s_transitions, 0, sizeof(s_transitions));
+    s_munchers_were_active = false;
 
     // Reset active prizes sprites offscreen
     for (int i = 0; i < NPRIZES; i++) {
@@ -70,6 +85,20 @@ void reset_prizes_and_mazes_level(void) {
         xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, x_pos_px, -32);
         xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, y_pos_px, -32);
         xram0_struct_set(current_sparkle_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
+    }
+
+    // Maze-muncher sprites (see update_maze_munchers_animation()) have no
+    // other reliable park-off-screen path: the memset above already
+    // zeroes s_transitions[].active, so if a transition was actively
+    // mid-sweep when this reset ran (e.g. the game ended mid-transition),
+    // that transition's own "sweep finished" cleanup never gets to run,
+    // and its munchers would otherwise stay frozen wherever they last
+    // rendered, visibly sitting on top of the next game's maze.
+    for (int i = 0; i < NMAZE_MUNCHERS; i++) {
+        unsigned muncher_config = MAZE_MUNCHERS_CONFIG + (i * sizeof(vga_mode5_sprite_t));
+        xram0_struct_set(muncher_config, vga_mode5_sprite_t, x_pos_px, -32);
+        xram0_struct_set(muncher_config, vga_mode5_sprite_t, y_pos_px, -32);
+        xram0_struct_set(muncher_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
     }
 
     // Re-copy Level 0 map into MAZE_MAP_DATA in XRAM
@@ -174,8 +203,6 @@ void update_maze_munchers_animation(void) {
     bool any_active = s_transitions[0].active || s_transitions[1].active;
 
     if (!any_active) {
-        // Ensure munchers are parked off-screen when no transitions are active
-        static bool s_munchers_were_active = false;
         if (s_munchers_were_active) {
             s_munchers_were_active = false;
             for (int i = 0; i < NMAZE_MUNCHERS; i++) {
@@ -188,7 +215,6 @@ void update_maze_munchers_animation(void) {
         return;
     }
 
-    static bool s_munchers_were_active = false;
     s_munchers_were_active = true;
 
     // Process both left side (0) and right side (1) transitions independently

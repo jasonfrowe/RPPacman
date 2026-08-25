@@ -253,9 +253,14 @@ void clear_all_active_score_popups(void) {
         }
     }
 }
+// Linear ramp from 10.0s (level 0) down to 4.0s (level 21), plus a flat
+// +12-frame (0.2s) buffer across every level -- the user found the
+// un-padded ramp (600..240) left the ghost-chain bonus just barely out of
+// reach, short by roughly a constant 0.1-0.3s regardless of level, not a
+// percentage -- hence a flat frame offset rather than rescaling the ramp.
 static const uint16_t FRIGHTENED_DURATION_TABLE[22] = {
-    600, 583, 566, 549, 531, 514, 497, 480, 463, 446,
-    429, 411, 394, 377, 360, 343, 326, 309, 291, 274, 257, 240
+    612, 595, 578, 561, 543, 526, 509, 492, 475, 458,
+    441, 423, 406, 389, 372, 355, 338, 321, 303, 286, 269, 252
 };
 
 static int8_t get_opposite_dir(int8_t dir) {
