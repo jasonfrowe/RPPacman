@@ -21,9 +21,13 @@ rp6502_asset(RPPacMan 0x1DE20 images/Titles_RP6502_4bpp.bin)
 
 # Additional assets to read in from the ROM 
 rp6502_asset(RPPacMan resultsmap images/Results_map.bin)
-rp6502_asset(RPPacMan resultstiles images/Results_tiles_4bpp.bin) #8x8, 132 frame
+rp6502_asset(RPPacMan resultstiles images/Results_tiles_4bpp.bin) #8x8, 132 frames
 rp6502_asset(RPPacMan titlemap images/title_map_copy.bin)
 rp6502_asset(RPPacMan titletile images/Titles_RP6502_4bpp_copy.bin)
+rp6502_asset(RPPacMan congratsmap images/Congrats_map.bin)
+rp6502_asset(RPPacMan congratstiles images/Congrats_tiles_4bpp.bin) #8x8 126 frames
+rp6502_asset(RPPacMan rankingsmap images/Rankings_map.bin)
+rp6502_asset(RPPacMan rankingstiles images/Rankings_tiles_4bpp.bin) #8x8 106 frames
 
 # Music assets
 rp6502_asset(RPPacMan pacman01 music/tracks/PacManCE_01.BIN) #Game start jingle PacManCE_01.BIN
