@@ -1,9 +1,9 @@
 # Pac-Man CE OPL2 Translation Plan
 
 Updated: 2026-08-24
-Branch: codesize-optimization (see ROADMAP.md for the branch's actual
-current name if this goes stale -- this file just tracks the music
-work regardless of which branch it lands on)
+Branch: main (see ROADMAP.md for the branch's actual current name if
+this goes stale -- this file just tracks the music work regardless of
+which branch it lands on)
 
 ## Goal
 

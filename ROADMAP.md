@@ -1,7 +1,7 @@
 # RPPacMan Roadmap
 
 Updated: 2026-08-24
-Branch: codesize-optimization (forked from main after the gameplay-sfx-tuning merge)
+Branch: main
 
 Big-picture task list for finishing Pac-Man CE beyond the music work tracked
 in `Plan.md` (which stays scoped to the NSF->OPL2 translation effort). We are
@@ -101,6 +101,41 @@ Appears after Results. Depends on (ii-b)'s persistence story. Results
 totals/histogram (vi) don't persist across sessions -- this is purely
 end-of-run, matching what was actually asked for.
 
+## Speed calibration
+
+Ghosts previously derived their chase-mode speed as a fixed `7/8` fraction
+of Pac-Man's own level speed (`src/ghost.c`) -- meaning ghosts could
+mathematically never move faster than Pac-Man at the same level. Real
+hardware measurement (frame-by-frame pixel patterns) showed this was
+wrong: at max level, Pac-Man's own top speed measures `3,2,2,3,2,2`
+px/frame (avg 2.333) while ghosts measure `3,2,3,2,3` (avg 2.500) --
+faster than Pac-Man, matching real Pac-Man CE where ghosts do catch up at
+high levels.
+
+- `SPEED_TABLE[22]` (`src/player.c`) recalibrated: max level now
+  `0x0255` (597, 2.332 px/frame) instead of `0x0280` (640, 2.500),
+  linearly interpolated across all 22 levels from the unchanged level-0
+  floor (`0x0100`, 1.0 px/frame).
+- New, independent `GHOST_SPEED_TABLE[22]` (`src/ghost.c`), replacing the
+  `(base_speed_fp * 7) / 8` derivation for chase mode. Max level `0x0280`
+  (640, 2.500 px/frame) -- matching Pac-Man's *old* cap exactly, by
+  design. Floor kept at the old ratio's level-0 value (`0x00E0`, 224) so
+  low levels are unaffected, linearly interpolated in between.
+  Frightened (`>>2`) and eaten (`*2`) multipliers, and Blinky's Cruise
+  Elroy bonus, now scale off the ghost's own base speed instead of
+  Pac-Man's -- both because ghosts have their own table now and because
+  it's the more correct dependency regardless.
+- Verified via direct simulation of the fixed-point accumulator
+  (`sub += speed_fp; move = sub>>8; sub &= 0xFF`, repeated) against both
+  new max-level values: `0x0255` produces `2,2,2,3,2,2,3,...` and
+  `0x0280` produces `2,3,2,3,2,3,...` -- both match the measured patterns
+  (phase-shifted from the printed start, as expected since real gameplay
+  doesn't start the accumulator at zero).
+- House-entry/exit/return-home speeds (still derived from Pac-Man's own
+  `SPEED_TABLE`, e.g. `home_speed_fp`, `enter_speed_fp`, `exit_speed_fp`
+  in `src/ghost.c`) were deliberately left alone -- those aren't the
+  "chase mode" speed the measurements were about.
+
 ## Ghost mechanics: tunnel/maze-transition fixes
 
 A cluster of "ghost (or eaten eyes) gets stuck oscillating up/down near
@@ -147,6 +182,143 @@ of an already-hard problem):
   the only real-data tiles close enough to that boundary are outside the
   rows/columns the transition wave actually touches, so this was a
   red herring for this particular bug, not the explanation.
+
+### Second round: the real recurring cause, and a self-inflicted regression
+
+The above fixes didn't fully close the problem -- ghosts (and eaten eyes)
+kept getting reported stuck/flying-off/mispathing near the vertical
+tunnel across several more rounds this session. Root causes, in the order
+found:
+
+- **`is_wall_tile()` (`src/player.c`) only ever blocked tile values
+  1-115.** The map's own documented taxonomy (0=blank, 116-124=pellet/
+  popup overlays, 125-127=out-of-bounds void) was never actually enforced
+  here -- 125-127 silently read as "walkable." Since `can_step_dir()`,
+  and therefore *every* ghost direction decision (main candidate loop and
+  every fallback branch), is gated on this function, a ghost could freely
+  step onto a void tile that looked like ordinary floor from its
+  neighbors, then oscillate in place because most directions out of a
+  void tile also read as "safe" by the same broken check. Fixed: also
+  blocks `tile_index >= 125`.
+- **The vertical-tunnel left/right-turn suppression band was far wider
+  than the real wrap-eligible area.** It's a pure screen-Y band (~6 tile
+  rows each end), but most of that band is ordinary maze interior with
+  normal T-intersections, not tunnel -- confirmed by direct maze-data
+  inspection, only a narrow set of columns actually support the wrap (see
+  the movement loop's wrap-teleport safety guard, same section below).
+  Suppressing every left/right turn in the whole band could trap a ghost
+  that reaches a real T-intersection there needing to turn, with
+  continuing up/down genuinely wall-blocked and no suppressed-axis
+  alternative offered. Fixed: added `column_supports_vertical_wrap` (a
+  live per-column safety check, reusing the same logic as the movement
+  guard) and only suppress left/right turns when the ghost's current
+  column actually supports the wrap (`suppress_lr_turns` in
+  `update_ghost_outside_movement`).
+- **Self-inflicted regression, caught and reverted same session**: an
+  earlier attempt at the above also changed the vertical-axis "shortest
+  wrapped distance" fold (used to pick a direction toward a target tile)
+  to use the tunnel's 23-tile period instead of `MAZE_MAP_HEIGHT` (30).
+  That fold was applied *unconditionally*, at every intersection
+  everywhere on the map, not just near the tunnel -- so any two points
+  more than ~11 rows apart vertically (the ghost house door sits at row
+  12, so most of the map qualifies) got a bogus "wraparound shortcut"
+  computed, actively steering ghosts the wrong way. This is very likely
+  why eaten eyes flew off in a dead-straight vertical line forever
+  (continuing straight kept misjudging as "closer" than turning toward
+  the door) and was a major contributor to the wall-oscillation reports.
+  Fixed: the fold is now only applied when the ghost is actually at a
+  wrap-eligible position (gated on the same `suppress_lr_turns`); Clyde's
+  separate 8-tile "shyness" distance check (`compute_ghost_target_tile`)
+  had the same latent issue and had its vertical fold removed entirely
+  (no cheap way to check column-eligibility from that function, and the
+  bogus-shortcut risk outweighed the rare tunnel-mouth edge case it was
+  meant to help).
+- **The vertical wrap teleport itself was unconditional.** The 184px jump
+  only lands on a real open tile at the columns confirmed above -- at any
+  other column it landed the ghost inside a wall tile, and since the
+  movement loop has no per-pixel wall check between intersections, it
+  would then keep walking through solid walls indefinitely (matching
+  reports of eyes clipping through walls near the top of the screen and
+  reappearing elsewhere). Fixed in both `src/ghost.c` and `src/player.c`:
+  the jump is now only taken when the destination tile is verified safe
+  (`is_ghost_safe_tile_value`/`is_safe_landing_tile`); otherwise it's
+  skipped and the entity runs into the ordinary wall-blocked path at the
+  next intersection, like any other wall.
+
+### Vertical tunnel recalibration after the maze-data fix (see "Maze data" below)
+
+Once `images/Maze_map.bin` was brought up to date with the real map
+(`graphics/map_00.bin`), the vertical tunnel briefly stopped working
+end-to-end -- not a logic bug, a stale-constant one:
+
+- The wrap **trigger threshold** (`drawn_y<=28` near the top) became
+  unreachable: the corrected map has a real wall one row earlier than the
+  old (incomplete) map did, so entities got blocked before ever reaching
+  the old threshold. Raised to `VERTICAL_TUNNEL_TRIGGER_TOP_DRAWN_Y = 36`
+  (`src/constants.h`), which covers the actual last-reachable row.
+- The wrap **distance** itself (`VERTICAL_TUNNEL_WRAP_PX`, was 184/23
+  tiles) was calibrated against the old map's geometry. The real shaft
+  (columns 18 and 28, confirmed via direct tile-data inspection) has
+  real walls at row 3 (top) and row 27 (bottom), making row 4 the last
+  reachable row near the top and row 26 the last reachable row near the
+  bottom -- a gap of 176px (22 tiles), not 184. With 184, every position
+  in the last reachable row mapped one row into the wall on the far side,
+  so the safety guard above correctly refused it every time and the
+  tunnel looked dead. Fixed: `VERTICAL_TUNNEL_WRAP_PX = 176`. If this
+  maze's geometry changes again, re-derive both constants from the new
+  wall positions the same way (see the constant's own comment in
+  `src/constants.h`).
+
+## Game restart
+
+Starting a new game from the title menu (`TITLE_SUBSTATE_GAME_START_BLACK_18`
+in `src/main.c`) had two separate bugs, both now fixed:
+
+- **`maze_dx`** (the horizontal endless-scroll offset, `src/tile_mode2.c`)
+  is a global that `player_update_motion()` normally recomputes every
+  gameplay frame -- but nothing reset it on restart. It stayed at
+  whatever value the *previous* game ended on, so the maze background and
+  all 4 ghosts' initial screen positions (`init_ghost_data()` derives
+  theirs from `world_px + maze_dx`) rendered at that stale offset for
+  several seconds of fade/intro before the first real gameplay frame
+  silently corrected it -- an uncentered maze that visibly snapped into
+  place, and occasionally a spurious ghost-Pac-Man collision if a stale
+  ghost position happened to overlap Pac-Man's fresh one. Fixed: `maze_dx`
+  is now explicitly recomputed from the fresh player position and pushed
+  to hardware before `reset_ghosts_to_initial_positions()` runs.
+- `start_normal_game()` (`src/main.c`, declared in `src/ghost.h`) is dead
+  code -- never called anywhere. The actual restart path duplicates its
+  logic inline in `TITLE_SUBSTATE_GAME_START_BLACK_18`. Left as-is (out
+  of scope for the reset bug), but flagged here since it's a real trap:
+  a future fix aimed at the wrong copy would silently do nothing.
+
+## Maze data: `Maze_map.bin` vs `R_Mazes.bin` drift
+
+`images/Maze_map.bin` (loaded once at cold boot) and `R_Mazes.bin`'s own
+"level 0" entry (the pristine backup `reset_prizes_and_mazes_level()`
+restores from on every later game restart) had drifted out of sync --
+confirmed via direct byte comparison, 579 of 1410 tiles differed. This
+was misdiagnosed once this session (in-code workaround added, then fully
+reverted -- see git history if the idea resurfaces) before the real
+picture became clear:
+
+- All 579 diffs were tile-125/126/127 (decorative, kick-drum-flash-
+  synced tiles, e.g. around the ghost house and side corridors -- NOT
+  "out-of-bounds void" as an earlier taxonomy comment assumed) vs blank.
+  `R_Mazes.bin`'s level 0 had the correct, complete set (55 tile-125
+  instances); `Maze_map.bin` was the stale/incomplete file, missing 54 of
+  them. An in-code fixup that overwrote `R_Mazes.bin`'s level-0 backup
+  with `Maze_map.bin`'s data on every boot (so restarts would restore
+  "the true original") had the direction backwards -- it silently killed
+  the center decorative tiles' blink on every restart (while the left/
+  right side tiles kept working, since those refresh independently via
+  the maze-transition system, untouched by the fixup). Reverted in full.
+- Real fix, at the source: the user updated `images/Maze_map.bin` from
+  `graphics/map_00.bin` (a current, correct export) so the boot map
+  matches `R_Mazes.bin` going forward, no runtime workaround needed. This
+  also changed the maze's actual wall geometry near the vertical tunnel
+  shafts, which needed its own recalibration -- see "Vertical tunnel
+  recalibration" above.
 
 ## Code size
 

@@ -40,7 +40,48 @@ bool is_wall_tile(int16_t world_x, int16_t world_y) {
     RIA.step0 = 1;
     uint8_t tile_index = RIA.rw0;
 
-    return (tile_index > 0 && tile_index < 116);
+    // Tile taxonomy: 0 = blank floor, 116-124 = pellet/prize/score-popup
+    // overlays (walkable), 1-115 = real wall art, 125-127 = out-of-bounds
+    // void markers -- not real wall geometry, but still "can't stand
+    // here" (confirmed present in the actual map data at a handful of
+    // border-seam tiles, e.g. the one non-open column in the otherwise
+    // wide-open row below the top border). This function previously only
+    // blocked 1-115, silently treating 125-127 as walkable. Since
+    // can_step_dir() (and therefore every ghost direction decision, in
+    // both the main candidate loop and every fallback branch) is gated
+    // on this function, that let a ghost walk onto a void tile that
+    // looks like ordinary open floor from its neighbors -- explaining
+    // reports of a ghost parked exactly on an out-of-bounds tile,
+    // oscillating in place because most directions out of a void tile
+    // still read as "safe" by the same broken check.
+    return (tile_index > 0 && tile_index < 116) || (tile_index >= 125);
+}
+
+// Is (world_x, world_y)'s tile safe to stand on -- used only to gate the
+// vertical tunnel wrap jump below, which (unlike normal movement) has no
+// following per-pixel wall check to catch a bad landing. Tile taxonomy:
+// 0 = blank floor, 116-124 = pellet/prize/score-popup overlays (walkable),
+// 1-115 = wall art, 125-127 = out-of-bounds void -- all of the latter two
+// ranges are "can't stand here."
+static bool is_safe_landing_tile(int16_t world_x, int16_t world_y) {
+    while (world_x < 0) world_x += WORLD_WIDTH;
+    while (world_x >= WORLD_WIDTH) world_x -= WORLD_WIDTH;
+    while (world_y < 0) world_y += WORLD_HEIGHT;
+    while (world_y >= WORLD_HEIGHT) world_y -= WORLD_HEIGHT;
+
+    uint16_t tile_x = (uint16_t)(world_x / MAZE_TILES_SIZE_PX);
+    uint16_t tile_y = (uint16_t)(world_y / MAZE_TILES_SIZE_PX);
+
+    if (tile_x >= MAZE_MAP_WIDTH) tile_x %= MAZE_MAP_WIDTH;
+    if (tile_y >= MAZE_MAP_HEIGHT) tile_y %= MAZE_MAP_HEIGHT;
+
+    uint16_t offset = tile_y * MAZE_MAP_WIDTH + tile_x;
+
+    RIA.addr0 = MAZE_MAP_DATA + offset;
+    RIA.step0 = 1;
+    uint8_t tile_index = RIA.rw0;
+
+    return tile_index == 0 || (tile_index >= 116 && tile_index <= 124);
 }
 
 void get_dir_offset(int8_t dir, int8_t *dx, int8_t *dy) {
@@ -254,30 +295,32 @@ static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
 }
 
 // 8.8 Fixed-Point Speed Lookup Table across 22 Prize Levels (Cherry to Crown)
-// 0x0100 = 1.00 px/frame (Cherry) -> 0x0280 = 2.50 px/frame (Crown)
+// 0x0100 = 1.000 px/frame (Cherry) -> 0x0255 = 2.332 px/frame (Crown)
+// Max cap calibrated to a measured real-hardware top speed pattern of
+// 3,2,2,3,2,2 px/frame (avg 2.333 px/frame).
 const uint16_t SPEED_TABLE[22] = {
     0x0100, // Level 0  (Cherry):            1.000 px/frame
-    0x0112, // Level 1  (Strawberry):        1.071 px/frame
-    0x0124, // Level 2  (Orange):            1.142 px/frame
-    0x0136, // Level 3  (Apple):             1.214 px/frame
-    0x0149, // Level 4  (Melon):             1.285 px/frame
-    0x015B, // Level 5  (Banana):            1.357 px/frame
-    0x016D, // Level 6  (Peach):             1.428 px/frame
-    0x0180, // Level 7  (Galaxian Boss):     1.500 px/frame
-    0x0192, // Level 8  (Bell):              1.571 px/frame
-    0x01A4, // Level 9  (Key):               1.642 px/frame
-    0x01B6, // Level 10 (Coffee):            1.714 px/frame
-    0x01C9, // Level 11 (Cake):              1.785 px/frame
-    0x01DB, // Level 12 (Galaga):            1.857 px/frame
-    0x01ED, // Level 13 (Gaplus Drone):      1.928 px/frame
-    0x0200, // Level 14 (Hamburger):         2.000 px/frame
-    0x0212, // Level 15 (Fried Egg):         2.071 px/frame
-    0x0224, // Level 16 (Candy):             2.142 px/frame
-    0x0236, // Level 17 (Four-Leaf Clover):  2.214 px/frame
-    0x0249, // Level 18 (Diamond):           2.285 px/frame
-    0x025B, // Level 19 (Heart):             2.357 px/frame
-    0x026D, // Level 20 (Samurai Helmet):    2.428 px/frame
-    0x0280, // Level 21 (Crown):             2.500 px/frame (Max Cap)
+    0x0110, // Level 1  (Strawberry):        1.062 px/frame
+    0x0120, // Level 2  (Orange):            1.125 px/frame
+    0x0131, // Level 3  (Apple):             1.191 px/frame
+    0x0141, // Level 4  (Melon):             1.254 px/frame
+    0x0151, // Level 5  (Banana):            1.316 px/frame
+    0x0161, // Level 6  (Peach):             1.379 px/frame
+    0x0172, // Level 7  (Galaxian Boss):     1.445 px/frame
+    0x0182, // Level 8  (Bell):              1.508 px/frame
+    0x0192, // Level 9  (Key):               1.570 px/frame
+    0x01A2, // Level 10 (Coffee):            1.633 px/frame
+    0x01B3, // Level 11 (Cake):              1.699 px/frame
+    0x01C3, // Level 12 (Galaga):            1.762 px/frame
+    0x01D3, // Level 13 (Gaplus Drone):      1.824 px/frame
+    0x01E3, // Level 14 (Hamburger):         1.887 px/frame
+    0x01F4, // Level 15 (Fried Egg):         1.953 px/frame
+    0x0204, // Level 16 (Candy):             2.016 px/frame
+    0x0214, // Level 17 (Four-Leaf Clover):  2.078 px/frame
+    0x0224, // Level 18 (Diamond):           2.141 px/frame
+    0x0235, // Level 19 (Heart):             2.207 px/frame
+    0x0245, // Level 20 (Samurai Helmet):    2.270 px/frame
+    0x0255, // Level 21 (Crown):             2.332 px/frame (Max Cap)
 };
 
 static uint16_t s_speed_subpixel_x = 0;
@@ -551,13 +594,26 @@ void player_update_motion(const input_actions_t *actions) {
         player.world_px -= WORLD_WIDTH;
     }
 
-    // Vertical tunnel wrapping using Pac-Man's drawn screen position (world_py + VISUAL_Y_OFFSET)
+    // Vertical tunnel wrapping using Pac-Man's drawn screen position (world_py + VISUAL_Y_OFFSET).
+    // Only taken when the destination tile is verified safe -- the jump
+    // only lands on open floor at the handful of columns where the top
+    // and bottom border rows are both unwalled at that column (see the
+    // matching guard in ghost.c's update_ghost_outside_movement for the
+    // full explanation). At any other column, skip the jump and let the
+    // normal per-pixel wall check (is_blocked, above) stop Pac-Man at the
+    // real border wall instead.
     int16_t drawn_y = player.world_py + VISUAL_Y_OFFSET;
 
-    if (player.dir == DIR_DOWN && (drawn_y + SPRITE_SIZE_PX) >= 216) {
-        player.world_py -= 184; // Moving down: bottom of drawn sprite hits >= 216 -> shift up
-    } else if (player.dir == DIR_UP && drawn_y <= 28) {
-        player.world_py += 184; // Moving up: top of drawn sprite hits <= 28 -> shift down
+    if (player.dir == DIR_DOWN && (drawn_y + SPRITE_SIZE_PX) >= VERTICAL_TUNNEL_TRIGGER_BOTTOM_DRAWN_Y) {
+        int16_t wrapped_py = player.world_py - VERTICAL_TUNNEL_WRAP_PX;
+        if (is_safe_landing_tile(player.world_px, wrapped_py)) {
+            player.world_py = wrapped_py; // Moving down: bottom of drawn sprite hits the bottom shaft wall -> shift up
+        }
+    } else if (player.dir == DIR_UP && drawn_y <= VERTICAL_TUNNEL_TRIGGER_TOP_DRAWN_Y) {
+        int16_t wrapped_py = player.world_py + VERTICAL_TUNNEL_WRAP_PX;
+        if (is_safe_landing_tile(player.world_px, wrapped_py)) {
+            player.world_py = wrapped_py; // Moving up: top of drawn sprite hits the top shaft wall -> shift down
+        }
     }
 
     // Screen Y tracks world Y with visual offset

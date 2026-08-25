@@ -29,6 +29,42 @@
 #define MAZE_MAP_WIDTH          47                  // Width of the maze map in tiles
 #define MAZE_MAP_HEIGHT         30                  // Height of the maze map in tiles
 
+// The vertical wrap seam (Pac-Man/ghosts looping off the top/bottom of the
+// screen) jumps by a FIXED distance, NOT a full MAZE_MAP_HEIGHT (30 tiles)
+// loop -- the top/bottom few border rows aren't part of the wrap cycle.
+// Any "shortest wrapped distance" math for the vertical axis must fold
+// using this period, not MAZE_MAP_HEIGHT, or it misjudges which direction
+// is actually shorter right at the seam.
+//
+// This must equal (last reachable row near the bottom wall) - (last
+// reachable row near the top wall), in tiles -- i.e. the actual gap
+// between where a real wall stops further progress on each end, not the
+// shaft's own open length. For the current maze (images/Maze_map.bin):
+// the top shaft wall sits at row 3 (row 4 is the last reachable row,
+// world_py 32-39) and the bottom shaft wall sits at row 27 (row 26 is the
+// last reachable row, world_py 208-215) -- 208-32 = 215-39 = 176px (22
+// tiles). Using the shaft's own length (23 tiles/184px) here is off by
+// one row and makes every position map into the wall on the far side,
+// so VERTICAL_TUNNEL_TRIGGER_TOP/BOTTOM_DRAWN_Y's safety-checked wrap
+// (ghost.c/player.c) can never find a safe landing and silently never
+// fires. If this maze's geometry changes again, re-derive from the new
+// wall positions the same way.
+#define VERTICAL_TUNNEL_WRAP_PX    176
+#define VERTICAL_TUNNEL_WRAP_TILES (VERTICAL_TUNNEL_WRAP_PX / MAZE_TILES_SIZE_PX)
+
+// Drawn-Y (VISUAL_Y_OFFSET-adjusted) thresholds where the vertical wrap
+// jump is attempted. Must be reachable before a real wall blocks further
+// progress in that direction, or the wrap becomes silently unreachable.
+// Calibrated against the maze's actual shaft geometry: the top shaft's
+// real wall sits at row 3, making row 4 (world_py 32-39, drawn_y 29-36)
+// the last reachable row; the bottom shaft's wall sits at row 27, making
+// row 26 (world_py 208-215) the last reachable row there. These are tied
+// to this specific maze layout (images/Maze_map.bin) -- if that geometry
+// changes, re-derive both from the new wall positions the same way, or
+// the trigger point can end up walled off one row too early/late again.
+#define VERTICAL_TUNNEL_TRIGGER_TOP_DRAWN_Y     36
+#define VERTICAL_TUNNEL_TRIGGER_BOTTOM_DRAWN_Y  216
+
 #define SPRITE_DATA            (MAZE_MAP_DATA + MAZE_MAP_DATA_SIZE) // Address for player sprite data
 #define SPRITE_DATA_SIZE       (0x4E80U)            // Size of player sprite data (157 frames * 16x16 = 20096 bytes)
 #define SPRITE_SIZE_PX          16                  // Size of player sprite in pixels
@@ -42,7 +78,7 @@
 #define TEXT_MAP_DATA          (FONT_TILES_DATA + FONT_TILES_DATA_SIZE) // Address for text map data
 #define TEXT_MAP_DATA_SIZE     (0x0258U)            // Size of text map data (1200 bytes, 40x15 characters)
 #define TEXT_MAP_WIDTH          40                  // Width of the text map in characters
-#define TEXT_MAP_HEIGHT         15                  // Height of the text map in characters
+#define TEXT_MAP_HEIGHT         15                   // Height of the text map in characters
 
 #define ALL_MAZE_MAPS_DATA     (TEXT_MAP_DATA + TEXT_MAP_DATA_SIZE) // Address for all maze maps data
 #define ALL_MAZE_MAPS_DATA_SIZE  (0x3C96U)          // Size of all maze maps data (15510 bytes, 47x30 tiles * 11 maps)

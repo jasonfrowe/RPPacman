@@ -399,14 +399,33 @@ int main(void)
                         write_text_to_text_map(17, 9,  "       ");
                         write_text_to_text_map(17, 10, "       ");
 
-                        // Reset ghosts, maze, and player to starting positions
-                        reset_ghosts_to_initial_positions();
-                        reset_prizes_and_mazes_level();
-
+                        // Reset the player's world/screen position -- and
+                        // maze_dx, the endless-scroll offset -- BEFORE
+                        // resetting ghosts. maze_dx is a global that
+                        // player_update_motion() normally recomputes every
+                        // gameplay frame, but nothing recomputes it here:
+                        // left at whatever value the PREVIOUS game ended
+                        // on, the maze background and all 4 ghosts' initial
+                        // screen positions (init_ghost_data() below derives
+                        // theirs from world_px + maze_dx) render at that
+                        // stale offset for several seconds of fade/intro
+                        // (nothing corrects it until the first real
+                        // gameplay frame runs) -- an uncentered maze that
+                        // visibly snaps into place once it does, and
+                        // possibly-coincident stale ghost screen positions
+                        // that could spuriously overlap Pac-Man's fresh
+                        // position for a collision check.
                         player.world_px = 23 * MAZE_TILES_SIZE_PX; // 184
                         player.world_py = 21 * MAZE_TILES_SIZE_PX; // 168
                         player.x_pos_px = (int16_t)((SCREEN_WIDTH - SPRITE_SIZE_PX) / 2);
                         player.y_pos_px = player.world_py - 3;
+                        maze_dx = player.x_pos_px - player.world_px;
+                        xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, x_pos_px, maze_dx);
+
+                        // Reset ghosts, maze, and player to starting positions
+                        reset_ghosts_to_initial_positions();
+                        reset_prizes_and_mazes_level();
+
                         player.score = 0;
                         player.score_by_cat[SCORE_CAT_PELLET] = 0;
                         player.score_by_cat[SCORE_CAT_PRIZE] = 0;

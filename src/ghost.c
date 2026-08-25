@@ -331,8 +331,8 @@ void check_pacman_ghost_collisions(void) {
         int16_t dy = g_center_y - pm_center_y;
 
         // Handle vertical tunnel wrapping seam (184px loop)
-        if (dy > (184 / 2)) dy -= 184;
-        else if (dy < -(184 / 2)) dy += 184;
+        if (dy > (VERTICAL_TUNNEL_WRAP_PX / 2)) dy -= VERTICAL_TUNNEL_WRAP_PX;
+        else if (dy < -(VERTICAL_TUNNEL_WRAP_PX / 2)) dy += VERTICAL_TUNNEL_WRAP_PX;
 
         // 4x4 collision box centered on visual drawn positions:
         // Both sprites have a 4x4 bounding box centered within the 16x16 frame (offsets +6 to +9).
@@ -432,6 +432,16 @@ static void compute_ghost_target_tile(int ghost_index, int16_t *target_tx, int16
                 // far away instead of within his 8-tile "shy" radius.
                 if (dx > (MAZE_MAP_WIDTH / 2)) dx -= MAZE_MAP_WIDTH;
                 else if (dx < -(MAZE_MAP_WIDTH / 2)) dx += MAZE_MAP_WIDTH;
+                // No vertical fold here -- unlike the horizontal tunnel,
+                // the vertical wrap isn't reachable from every column (see
+                // suppress_lr_turns in update_ghost_outside_movement), and
+                // this function has no cheap way to check whether Clyde is
+                // at one of the columns where it is. Folding unconditionally
+                // invents a bogus wraparound "shortcut" for ordinary
+                // vertical distances most of the map away from any real
+                // seam, which did more harm (misjudging the 8-tile "shy"
+                // radius almost everywhere) than the rare tunnel-mouth edge
+                // case it was meant to fix.
                 if (dy > (MAZE_MAP_HEIGHT / 2)) dy -= MAZE_MAP_HEIGHT;
                 else if (dy < -(MAZE_MAP_HEIGHT / 2)) dy += MAZE_MAP_HEIGHT;
 
@@ -449,13 +459,48 @@ static void compute_ghost_target_tile(int ghost_index, int16_t *target_tx, int16
     }
 }
 
+// 8.8 Fixed-Point Ghost Chase-Speed Table across 22 Prize Levels (Cherry to Crown).
+// Independent of Pac-Man's own SPEED_TABLE -- ghosts catch up to, and at high
+// levels exceed, Pac-Man's top speed, matching real Pac-Man CE behavior.
+// Max cap calibrated to a measured real-hardware top speed pattern of
+// 3,2,3,2,3 px/frame (avg 2.500 px/frame).
+static const uint16_t GHOST_SPEED_TABLE[22] = {
+    0x00E0, // Level 0  (Cherry):            0.875 px/frame
+    0x00F4, // Level 1  (Strawberry):        0.953 px/frame
+    0x0108, // Level 2  (Orange):            1.031 px/frame
+    0x011B, // Level 3  (Apple):             1.105 px/frame
+    0x012F, // Level 4  (Melon):             1.184 px/frame
+    0x0143, // Level 5  (Banana):            1.262 px/frame
+    0x0157, // Level 6  (Peach):             1.340 px/frame
+    0x016B, // Level 7  (Galaxian Boss):     1.418 px/frame
+    0x017E, // Level 8  (Bell):              1.492 px/frame
+    0x0192, // Level 9  (Key):               1.570 px/frame
+    0x01A6, // Level 10 (Coffee):            1.648 px/frame
+    0x01BA, // Level 11 (Cake):              1.727 px/frame
+    0x01CE, // Level 12 (Galaga):            1.805 px/frame
+    0x01E2, // Level 13 (Gaplus Drone):      1.883 px/frame
+    0x01F5, // Level 14 (Hamburger):         1.957 px/frame
+    0x0209, // Level 15 (Fried Egg):         2.035 px/frame
+    0x021D, // Level 16 (Candy):             2.113 px/frame
+    0x0231, // Level 17 (Four-Leaf Clover):  2.191 px/frame
+    0x0245, // Level 18 (Diamond):           2.270 px/frame
+    0x0258, // Level 19 (Heart):             2.344 px/frame
+    0x026C, // Level 20 (Samurai Helmet):    2.422 px/frame
+    0x0280, // Level 21 (Crown):             2.500 px/frame (Max Cap)
+};
+
+// Forward declarations -- defined further down, needed by the vertical-
+// tunnel wrap safety check in update_ghost_outside_movement() below.
+static bool is_ghost_safe_tile_value(uint8_t v);
+static uint8_t read_maze_tile(uint16_t tx, uint16_t ty);
+
 // Update ghost movement when OUTSIDE in the maze
 static void update_ghost_outside_movement(int ghost_index) {
     ghost_struct *g = &ghosts[ghost_index];
 
     uint8_t speed_lvl = get_speed_level_index();
-    uint16_t base_speed_fp = SPEED_TABLE[speed_lvl];
-    uint16_t speed_fp = (base_speed_fp * 7) / 8; // Normal chase mode ghosts move at 7/8ths (87.5%) of Pac-Man's level speed
+    uint16_t base_speed_fp = GHOST_SPEED_TABLE[speed_lvl];
+    uint16_t speed_fp = base_speed_fp; // Normal chase mode ghosts move at their own level speed
 
     if (g->mode == GHOST_MODE_FRIGHTENED) {
         // Vulnerable ghosts move at 0.25x speed (1/4 of level speed)
@@ -490,12 +535,31 @@ static void update_ghost_outside_movement(int ghost_index) {
         if (g->world_px < 0) g->world_px += WORLD_WIDTH;
         else if (g->world_px >= WORLD_WIDTH) g->world_px -= WORLD_WIDTH;
 
-        // Handle vertical tunnel wrapping
+        // Handle vertical tunnel wrapping. The 184px jump only lands on a
+        // real, open tile at the small set of columns where the top and
+        // bottom border rows both happen to be unwalled at the same
+        // column (confirmed by direct maze-data inspection: e.g. row 2
+        // near the top and row 25 near the bottom are each walled at
+        // MOST columns, not just a couple like the horizontal tunnel's
+        // single row). At any other column this jump would land the
+        // ghost inside a wall tile -- and since this movement loop has no
+        // per-pixel wall check between intersections, it would then just
+        // keep walking through solid walls indefinitely. So the jump is
+        // only taken when the destination tile is verified safe; otherwise
+        // it's skipped and the ghost is left to run into the ordinary
+        // wall-blocked path at the next intersection, exactly like any
+        // other wall.
         int16_t drawn_y = g->world_py - 3;
-        if (g->dir == DIR_DOWN && (drawn_y + SPRITE_SIZE_PX) >= 216) {
-            g->world_py -= 184;
-        } else if (g->dir == DIR_UP && drawn_y <= 28) {
-            g->world_py += 184;
+        if (g->dir == DIR_DOWN && (drawn_y + SPRITE_SIZE_PX) >= VERTICAL_TUNNEL_TRIGGER_BOTTOM_DRAWN_Y) {
+            int16_t wrapped_py = g->world_py - VERTICAL_TUNNEL_WRAP_PX;
+            if (is_ghost_safe_tile_value(read_maze_tile((uint16_t)(g->world_px / MAZE_TILES_SIZE_PX), (uint16_t)(wrapped_py / MAZE_TILES_SIZE_PX)))) {
+                g->world_py = wrapped_py;
+            }
+        } else if (g->dir == DIR_UP && drawn_y <= VERTICAL_TUNNEL_TRIGGER_TOP_DRAWN_Y) {
+            int16_t wrapped_py = g->world_py + VERTICAL_TUNNEL_WRAP_PX;
+            if (is_ghost_safe_tile_value(read_maze_tile((uint16_t)(g->world_px / MAZE_TILES_SIZE_PX), (uint16_t)(wrapped_py / MAZE_TILES_SIZE_PX)))) {
+                g->world_py = wrapped_py;
+            }
         }
 
         // Step 1 of eaten return: Eyes reach home entrance door tile (23, 12) => world (184, 96)
@@ -565,6 +629,27 @@ static void update_ghost_outside_movement(int ghost_index) {
             // Check if ghost is in vertical tunnel regions (< 40px or > 200px drawn Y)
             bool is_in_vertical_tunnel = (drawn_y < 40) || ((drawn_y + SPRITE_SIZE_PX) > 200);
 
+            // This Y-band is wide (about 6 tile rows each end), and most of
+            // it is just ordinary open maze interior with normal
+            // T-intersections -- confirmed by direct maze-data inspection,
+            // the real wrap-eligible columns are a narrow subset (same set
+            // the movement loop's wrap-teleport guard above checks), not
+            // every column in the band. Suppressing left/right turns
+            // everywhere in the band (below) used to be able to trap a
+            // ghost that reaches a normal T-intersection there needing to
+            // turn, with continuing up/down genuinely blocked by a real
+            // wall and no suppressed-axis alternative offered -- exactly
+            // the "stuck oscillating up/down with only left/right actually
+            // open" symptom. Only suppress where this specific column's
+            // wrap landing spot is verified safe.
+            bool column_supports_vertical_wrap = false;
+            if (is_in_vertical_tunnel) {
+                int16_t wrap_py = (drawn_y < 40) ? (g->world_py + VERTICAL_TUNNEL_WRAP_PX)
+                                                  : (g->world_py - VERTICAL_TUNNEL_WRAP_PX);
+                column_supports_vertical_wrap = is_ghost_safe_tile_value(read_maze_tile((uint16_t)(g->world_px / MAZE_TILES_SIZE_PX), (uint16_t)(wrap_py / MAZE_TILES_SIZE_PX)));
+            }
+            bool suppress_lr_turns = is_in_vertical_tunnel && column_supports_vertical_wrap;
+
             // The horizontal tunnel's mouth (world tile column 0/46) sits
             // just past the real playable border (column 1/45), which is
             // walled everywhere except a handful of rows -- but the
@@ -592,7 +677,7 @@ static void update_ghost_outside_movement(int ghost_index) {
                 // up/down through the wrap seam forever (the seam sits
                 // inside this same Y band), never reaching a Y position
                 // where a left/right turn toward the home door is allowed.
-                if (is_in_vertical_tunnel && g->mode != GHOST_MODE_EATEN &&
+                if (suppress_lr_turns && g->mode != GHOST_MODE_EATEN &&
                     (test_dir == DIR_LEFT || test_dir == DIR_RIGHT)) {
                     continue;
                 }
@@ -629,8 +714,24 @@ static void update_ghost_outside_movement(int ghost_index) {
                     // tunnel actually is.
                     if (diff_x > (MAZE_MAP_WIDTH / 2)) diff_x -= MAZE_MAP_WIDTH;
                     else if (diff_x < -(MAZE_MAP_WIDTH / 2)) diff_x += MAZE_MAP_WIDTH;
-                    if (diff_y > (MAZE_MAP_HEIGHT / 2)) diff_y -= MAZE_MAP_HEIGHT;
-                    else if (diff_y < -(MAZE_MAP_HEIGHT / 2)) diff_y += MAZE_MAP_HEIGHT;
+                    // Unlike the horizontal axis, the vertical "tunnel" is
+                    // NOT a real wrap across the whole map -- it only
+                    // exists at the handful of columns verified by
+                    // suppress_lr_turns above, and only near the seam
+                    // itself. Folding diff_y unconditionally (whether by
+                    // MAZE_MAP_HEIGHT or any other period) invents a bogus
+                    // wraparound "shortcut" for any two points more than
+                    // half that period apart vertically -- which, at normal
+                    // maze-height distances, is most of the map, not just
+                    // near the seam. That systematically steered ghosts
+                    // (including eaten eyes targeting the home door, often
+                    // 15+ rows away) toward the wrong direction everywhere,
+                    // not just at the tunnel. Only fold when this ghost is
+                    // actually at a wrap-eligible position right now.
+                    if (suppress_lr_turns) {
+                        if (diff_y > (VERTICAL_TUNNEL_WRAP_TILES / 2)) diff_y -= VERTICAL_TUNNEL_WRAP_TILES;
+                        else if (diff_y < -(VERTICAL_TUNNEL_WRAP_TILES / 2)) diff_y += VERTICAL_TUNNEL_WRAP_TILES;
+                    }
 
                     int16_t dist_sq = (diff_x * diff_x) + (diff_y * diff_y);
 
@@ -664,9 +765,9 @@ static void update_ghost_outside_movement(int ghost_index) {
                 bool dir_is_ud = (g->dir == DIR_UP || g->dir == DIR_DOWN);
                 bool opp_is_lr = (opposite_dir == DIR_LEFT || opposite_dir == DIR_RIGHT);
                 bool opp_is_ud = (opposite_dir == DIR_UP || opposite_dir == DIR_DOWN);
-                bool dir_suppressed = (is_in_vertical_tunnel && g->mode != GHOST_MODE_EATEN && dir_is_lr) ||
+                bool dir_suppressed = (suppress_lr_turns && g->mode != GHOST_MODE_EATEN && dir_is_lr) ||
                                        (is_in_horizontal_tunnel && dir_is_ud);
-                bool opp_suppressed = (is_in_vertical_tunnel && g->mode != GHOST_MODE_EATEN && opp_is_lr) ||
+                bool opp_suppressed = (suppress_lr_turns && g->mode != GHOST_MODE_EATEN && opp_is_lr) ||
                                        (is_in_horizontal_tunnel && opp_is_ud);
 
                 if (!dir_suppressed && can_step_dir(g->world_px, g->world_py, g->dir)) {
