@@ -44,6 +44,8 @@ extern void music_resume(void);
 extern void sfx_set_ambient(const char* filename);
 extern void sfx_play(const char* filename);
 extern void sfx_stop(void);
+extern void sfx_pause(void);
+extern void sfx_resume(void);
 extern void update_sfx_advance(uint8_t ticks);
 
 // Returns true once for each real beat hit -- rhythm register 0xBD's

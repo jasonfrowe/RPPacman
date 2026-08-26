@@ -12,10 +12,12 @@
 #include "results.h"
 #include "hiscores.h"
 #include "congrats.h"
+#include "pause.h"
 
 typedef enum {
     STATE_TITLE,
     STATE_GAMEPLAY,
+    STATE_PAUSED,
     STATE_RESULTS,
     STATE_CONGRATS,
     STATE_RANKINGS
@@ -143,6 +145,34 @@ void start_congrats_screen(int8_t rank) {
 void start_rankings_screen(void) {
     s_game_state = STATE_RANKINGS;
     rankings_init();
+}
+
+// CONTINUE, from the pause screen: gameplay was never actually touched
+// while paused (no update function for it ran), so resuming is just
+// switching the dispatch target back -- ghosts, player, timers, and the
+// maze are exactly where they were.
+void resume_gameplay_from_pause(void) {
+    s_game_state = STATE_GAMEPLAY;
+}
+
+// RETRY, from the pause screen: the same "NORMAL selected" transition
+// the title menu uses (TITLE_SUBSTATE_GAME_START_WAIT_40 through
+// GAME_START_BLACK_18 does the actual score/lives/ghost/maze reset), so
+// a retry ends up identical to starting fresh from the title. Since this
+// fires mid-gameplay rather than from the title screen, the maze itself
+// (never touched by that sequence's own fade, which only fades the
+// title/font layers) needs to be explicitly blacked out here too, or
+// the screen would hard-cut instead of fading.
+void start_game_retry(void) {
+    set_pacman_cursor_hidden();
+    hide_all_ghosts();
+    music_stop();
+    sfx_stop();
+    title_anim_reset();
+    set_maze_palette_black();
+    s_game_state = STATE_TITLE;
+    s_title_substate = TITLE_SUBSTATE_GAME_START_WAIT_40;
+    s_title_timer = 0;
 }
 
 void start_normal_game(void) {
@@ -584,6 +614,12 @@ int main(void)
 
             hide_all_ghosts();
         } else if (s_game_state == STATE_GAMEPLAY) {
+            if (press_start) {
+                s_game_state = STATE_PAUSED;
+                pause_init();
+                continue;
+            }
+
             // 2. STATE_GAMEPLAY Updates
             player_update_motion(&actions);
             ghost_update_motion();
@@ -607,6 +643,8 @@ int main(void)
                 // Update maze palette animation
                 tile_mode2_palette_update(frame);
             }
+        } else if (s_game_state == STATE_PAUSED) {
+            pause_update(press_up, press_down, press_action);
         } else if (s_game_state == STATE_RESULTS) {
             results_update(press_start);
         } else if (s_game_state == STATE_CONGRATS) {

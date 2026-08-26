@@ -583,6 +583,23 @@ void sfx_stop(void) {
     sfx_silence_channel();
 }
 
+// Mirrors music_pause()/music_resume() for the SFX channel -- freezes the
+// ambient/one-shot player's own position (player_advance() no-ops while
+// paused) and silences channel 5, so a pause screen can stop everything
+// audible without losing the SFX player's place the way sfx_stop() would.
+void sfx_pause(void) {
+    if (s_sfx_player.fd >= 0 && !s_sfx_player.error_state) {
+        s_sfx_player.paused = true;
+        sfx_silence_channel();
+    }
+}
+
+void sfx_resume(void) {
+    if (s_sfx_player.fd >= 0 && !s_sfx_player.error_state) {
+        s_sfx_player.paused = false;
+    }
+}
+
 void update_sfx_advance(uint8_t ticks) {
     player_advance(&s_sfx_player, ticks, 5, 5);
     if (s_sfx_is_oneshot && s_sfx_player.ended) {

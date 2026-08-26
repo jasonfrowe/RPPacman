@@ -20,5 +20,7 @@ void start_normal_game(void);
 void start_results_screen(void);
 void start_congrats_screen(int8_t rank);
 void start_rankings_screen(void);
+void start_game_retry(void);
+void resume_gameplay_from_pause(void);
 
 #endif // GHOST_H
