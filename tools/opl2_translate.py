@@ -300,8 +300,33 @@ class OPL2Translator:
               80: {"m_ave": 0x21, "m_ksl": 0x1E, "m_atdec": 0xF9, "m_susrel": 0x08, "m_wave": 0x01,
                   "c_ave": 0x21, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x08, "c_wave": 0x01,
                   "feedback": 0x0E},
-              81: {"m_ave": 0x41, "m_ksl": 0x0C, "m_atdec": 0xF2, "m_susrel": 0xFF, "m_wave": 0x00,
-                  "c_ave": 0x11, "c_ksl": 0x00, "c_atdec": 0xF2, "c_susrel": 0xFF, "c_wave": 0x00,
+              # Inst 81 (sq2's own lead voice, first sounds at ~5:13 in
+              # track 0): never got the same envelope-under-glide fix
+              # applied to 33/38/39/80 -- unlike those, this one has no
+              # earlier review comment at all, just leftover values from
+              # before note_glide existed. Exact same bug: EGT=0
+              # (percussive -- decays through to silence even while key-on
+              # stays high), decay rate 2 (barely faster than the
+              # slowest possible crawl), and sustain level 15 (maximum
+              # attenuation, i.e. silent) on both operators. Under glide
+              # (this voice is only ever note_on()'d once, then held/
+              # re-pitched via note_glide() for the rest of its part) that
+              # decay never stops sinking and the sustain level it's
+              # sinking toward is silence -- reads as exactly what it is:
+              # the note attacks (with real hardware vibrato, VIB=1 on the
+              # modulator -- the "quick vibration"), decays away over the
+              # next second or so, and then never comes back for the rest
+              # of the piece, since nothing ever re-attacks it. Fixed the
+              # same way as the others: EGT 0->1 (sustain type) on both
+              # operators, decay 2->9 (settles at the sustain level almost
+              # immediately instead of still crawling toward it seconds
+              # later), sustain level 15->0 (as loud as the envelope gets,
+              # matching every other glide voice -- our own per-note
+              # attenuation is the sole loudness authority, not a second
+              # attenuation stacked on top). Release rate, waveform,
+              # feedback, and KSL all left exactly as they were.
+              81: {"m_ave": 0x61, "m_ksl": 0x0C, "m_atdec": 0xF9, "m_susrel": 0x0F, "m_wave": 0x00,
+                  "c_ave": 0x31, "c_ksl": 0x00, "c_atdec": 0xF9, "c_susrel": 0x0F, "c_wave": 0x00,
                   "feedback": 0x02},
               # Inst 33 (triangle): abandoning the "Square Lead"/GM-patch
               # lineage entirely. Timing is now confirmed correct (verified
