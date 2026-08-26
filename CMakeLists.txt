@@ -28,7 +28,8 @@ rp6502_asset(RPPacMan congratsmap images/Congrats_map.bin)
 rp6502_asset(RPPacMan congratstiles images/Congrats_tiles_4bpp.bin) #8x8 126 frames
 rp6502_asset(RPPacMan rankingsmap images/Rankings_map.bin)
 rp6502_asset(RPPacMan rankingstiles images/Rankings_tiles_4bpp.bin) #8x8 106 frames
-# rp6502_asset(RPPacMan mazetilesv2 images/Maze_tiles_v2_4bpp.bin) #8x8 128 frames -- "ice/frost" alternate maze tile set, see maze_palette_v2 in tile_mode2.h
+rp6502_asset(RPPacMan optionsmap images/Options_map.bin)
+rp6502_asset(RPPacMan optionstiles images/Options_tiles_4bpp.bin) #8x8 147 frames
 
 # Music assets
 rp6502_asset(RPPacMan pacman01 music/tracks/PacManCE_01.BIN) #Game start jingle PacManCE_01.BIN
@@ -36,6 +37,7 @@ rp6502_asset(RPPacMan pacman02 music/tracks/PacManCE_02.BIN) #Title screen music
 rp6502_asset(RPPacMan pacman00 music/tracks/PacManCE_00.BIN) #Normal game music PacManCE_00.BIN
 rp6502_asset(RPPacMan pacman05 music/tracks/PacManCE_05.BIN) #Results screen music PacManCE_05.BIN (also used for Congrats screen)
 rp6502_asset(RPPacMan pacman03 music/tracks/PacManCE_03.BIN) #Ranking music PacManCE_06.BIN
+rp6502_asset(RPPacMan pacman07 music/tracks/PacManCE_07.BIN) #Options screen music PacManCE_07.BIN
 
 # SFX-channel assets (reserved OPL2 channel 5 only -- see opl2_translate.py's
 # sfx profile and opl.c's sfx_play/sfx_set_ambient). The two ambient loops
