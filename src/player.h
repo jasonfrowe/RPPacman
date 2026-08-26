@@ -24,6 +24,7 @@ uint8_t get_speed_level_index(void);
 #define SCORE_HISTORY_BUCKETS 30 // 10s each, 0:00-5:00 (game's own 5:00 cap)
 
 void push_score_popup(uint16_t tile_x, uint16_t tile_y, uint8_t score_tile);
+void reset_score_popups(void);
 void update_player_score_display(uint32_t score);
 void add_player_score(uint32_t pts, uint8_t category);
 void reset_score_history(void);

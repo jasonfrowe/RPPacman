@@ -158,6 +158,18 @@ void push_score_popup(uint16_t tile_x, uint16_t tile_y, uint8_t score_tile) {
     RIA.rw0 = score_tile;
 }
 
+// Nothing else ever reset this queue -- a pellet-score popup (tile
+// 120-124) still counting down its 40-frame timer at game-over would
+// survive into the next game, and once its stale timer ran out there,
+// update_score_popups() would blank whatever tile now actually sits at
+// its recorded (tile_x, tile_y) -- a real wall or an uneaten dot in the
+// fresh game -- reading as maze tiles randomly disappearing shortly
+// after a restart. Clearing the count is enough: update_score_popups()
+// only ever looks at indices below s_popup_count.
+void reset_score_popups(void) {
+    s_popup_count = 0;
+}
+
 static void update_score_popups(void) {
     for (int8_t i = 0; i < (int8_t)s_popup_count; i++) {
         if (!s_score_popups[i].active) continue;

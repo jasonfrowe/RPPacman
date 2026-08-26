@@ -63,8 +63,11 @@ void reset_prizes_and_mazes_level(void) {
     left_prize_active = false;
     right_prize_active = false;
 
-    // Clear all active score popups
+    // Clear all active score popups (ghost/prize sprite-based, and the
+    // separate pellet tile-overlay ones -- two independent systems, both
+    // need clearing here)
     clear_all_active_score_popups();
+    reset_score_popups();
 
     // Reset maze transitions
     memset(s_transitions, 0, sizeof(s_transitions));
