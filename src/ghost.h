@@ -19,8 +19,10 @@ void start_warm_title_screen(void);
 void start_normal_game(void);
 void start_results_screen(void);
 void start_congrats_screen(int8_t rank);
-void start_rankings_screen(void);
+void start_rankings_screen(bool return_to_options);
 void start_game_retry(void);
 void resume_gameplay_from_pause(void);
+void start_options_screen(void);
+void set_pacman_cursor_hidden(void);
 
 #endif // GHOST_H

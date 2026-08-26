@@ -204,7 +204,7 @@ void congrats_update(bool press_up, bool press_down, bool press_action) {
                 s_timer++;
             } else {
                 set_title_palette_black();
-                start_rankings_screen();
+                start_rankings_screen(false);
             }
             break;
         }
@@ -224,6 +224,7 @@ typedef enum {
 
 static rankings_substate_t s_rank_substate;
 static uint16_t s_rank_timer;
+static bool s_rank_return_to_options;
 
 static void draw_rankings_list(void) {
     for (uint8_t i = 0; i < HISCORE_COUNT; i++) {
@@ -245,9 +246,10 @@ static void draw_rankings_list(void) {
     }
 }
 
-void rankings_init(void) {
+void rankings_init(bool return_to_options) {
     s_rank_substate = RANKINGS_SWAP_ASSETS;
     s_rank_timer = 0;
+    s_rank_return_to_options = return_to_options;
 }
 
 void rankings_update(bool press_confirm) {
@@ -287,7 +289,11 @@ void rankings_update(bool press_confirm) {
 
         case RANKINGS_WAIT_FOR_CONFIRM: {
             if (press_confirm) {
-                return_to_title_from_post_game();
+                if (s_rank_return_to_options) {
+                    start_options_screen();
+                } else {
+                    return_to_title_from_post_game();
+                }
             }
             break;
         }

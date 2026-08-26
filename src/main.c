@@ -13,6 +13,7 @@
 #include "hiscores.h"
 #include "congrats.h"
 #include "pause.h"
+#include "options.h"
 
 typedef enum {
     STATE_TITLE,
@@ -20,7 +21,8 @@ typedef enum {
     STATE_PAUSED,
     STATE_RESULTS,
     STATE_CONGRATS,
-    STATE_RANKINGS
+    STATE_RANKINGS,
+    STATE_OPTIONS
 } game_state_t;
 
 typedef enum {
@@ -57,7 +59,7 @@ void hide_all_ghosts(void) {
     }
 }
 
-static void set_pacman_cursor_hidden(void) {
+void set_pacman_cursor_hidden(void) {
     player.x_pos_px = -32;
     player.y_pos_px = -32;
     xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, x_pos_px, -32);
@@ -142,9 +144,14 @@ void start_congrats_screen(int8_t rank) {
     congrats_init(rank);
 }
 
-void start_rankings_screen(void) {
+void start_rankings_screen(bool return_to_options) {
     s_game_state = STATE_RANKINGS;
-    rankings_init();
+    rankings_init(return_to_options);
+}
+
+void start_options_screen(void) {
+    s_game_state = STATE_OPTIONS;
+    options_init();
 }
 
 // CONTINUE, from the pause screen: gameplay was never actually touched
@@ -386,6 +393,12 @@ int main(void)
                             title_anim_reset();
                             s_title_substate = TITLE_SUBSTATE_GAME_START_WAIT_40;
                             s_title_timer = 0;
+                        } else if (s_menu_selection == 2) {
+                            // "OPTIONS" selected -> fade out and swap to the
+                            // options screen; options.c's own fade-in swaps
+                            // the title music for pacman07.
+                            set_pacman_cursor_hidden();
+                            start_options_screen();
                         }
                     }
 
@@ -649,8 +662,10 @@ int main(void)
             results_update(press_start);
         } else if (s_game_state == STATE_CONGRATS) {
             congrats_update(press_up, press_down, press_action);
-        } else { // STATE_RANKINGS
+        } else if (s_game_state == STATE_RANKINGS) {
             rankings_update(press_start || press_action);
+        } else { // STATE_OPTIONS
+            options_update(press_up, press_down, press_action);
         }
 
         frame++;

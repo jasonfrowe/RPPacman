@@ -18,7 +18,10 @@ void congrats_update(bool press_up, bool press_down, bool press_action);
 
 // Called by start_rankings_screen() (src/main.c) to reset the rankings
 // screen's state machine before the first rankings_update() tick.
-void rankings_init(void);
+// return_to_options selects where WAIT_FOR_CONFIRM hands off to: the
+// title screen (post-game congrats flow) when false, or back to the
+// options screen (options.c's "Ranking" entry) when true.
+void rankings_init(bool return_to_options);
 
 // Drives the rankings (top-10 table) screen one real frame at a time.
 // press_confirm is edge-triggered start-or-action; only consulted while

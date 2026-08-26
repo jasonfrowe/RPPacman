@@ -67,6 +67,7 @@ target_sources(RPPacMan PRIVATE
     src/hiscores.c
     src/congrats.c
     src/pause.c
+    src/options.c
 )
 
 enable_testing()
