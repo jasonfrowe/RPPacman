@@ -23,6 +23,7 @@ void start_rankings_screen(bool return_to_options);
 void start_game_retry(void);
 void resume_gameplay_from_pause(void);
 void start_options_screen(void);
+void start_soundtest_screen(void);
 void set_pacman_cursor_hidden(void);
 
 #endif // GHOST_H

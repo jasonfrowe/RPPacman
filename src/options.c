@@ -25,7 +25,8 @@ typedef enum {
     OPTIONS_SWAP_ASSETS,
     OPTIONS_FADE_IN,
     OPTIONS_MENU_READY,
-    OPTIONS_FADE_OUT_TO_RANKINGS
+    OPTIONS_FADE_OUT_TO_RANKINGS,
+    OPTIONS_FADE_OUT_TO_SOUNDTEST
 } options_substate_t;
 
 typedef enum {
@@ -139,12 +140,20 @@ void options_update(bool press_up, bool press_down, bool press_action) {
                         s_substate = OPTIONS_FADE_OUT_TO_RANKINGS;
                         s_timer = 0;
                         break;
+                    case OPT_SOUND_TEST:
+                        // Same fade-out-first hand-off as Ranking:
+                        // soundtest.c has no fade-out of its own, it
+                        // expects the screen already black.
+                        set_pacman_cursor_hidden();
+                        s_substate = OPTIONS_FADE_OUT_TO_SOUNDTEST;
+                        s_timer = 0;
+                        break;
                     case OPT_EXIT:
                         return_to_title_from_post_game();
                         break;
                     default:
-                        // Achievements / Replay Normal / Replay Extra /
-                        // Sound Test: not yet implemented -- no-op for now.
+                        // Achievements / Replay Normal / Replay Extra:
+                        // not yet implemented -- no-op for now.
                         break;
                 }
             }
@@ -161,6 +170,18 @@ void options_update(bool press_up, bool press_down, bool press_action) {
                 // Rankings returns here (rather than to the title screen)
                 // via rankings_init()'s return_to_options flag.
                 start_rankings_screen(true);
+            }
+            break;
+        }
+
+        case OPTIONS_FADE_OUT_TO_SOUNDTEST: {
+            if (s_timer < FADE_FRAMES) {
+                uint8_t step = FADE_FRAMES / 2 - (s_timer / 2);
+                set_title_palette_scaled(step, 4, false, 0, false);
+                s_timer++;
+            } else {
+                set_title_palette_black();
+                start_soundtest_screen();
             }
             break;
         }

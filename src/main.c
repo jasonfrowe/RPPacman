@@ -14,6 +14,7 @@
 #include "congrats.h"
 #include "pause.h"
 #include "options.h"
+#include "soundtest.h"
 
 typedef enum {
     STATE_TITLE,
@@ -22,7 +23,8 @@ typedef enum {
     STATE_RESULTS,
     STATE_CONGRATS,
     STATE_RANKINGS,
-    STATE_OPTIONS
+    STATE_OPTIONS,
+    STATE_SOUNDTEST
 } game_state_t;
 
 typedef enum {
@@ -154,6 +156,11 @@ void start_options_screen(void) {
     options_init();
 }
 
+void start_soundtest_screen(void) {
+    s_game_state = STATE_SOUNDTEST;
+    soundtest_init();
+}
+
 // CONTINUE, from the pause screen: gameplay was never actually touched
 // while paused (no update function for it ran), so resuming is just
 // switching the dispatch target back -- ghosts, player, timers, and the
@@ -277,8 +284,11 @@ int main(void)
 
     static bool prev_up = false;
     static bool prev_down = false;
+    static bool prev_left = false;
+    static bool prev_right = false;
     static bool prev_action = false;
     static bool prev_start = false;
+    static bool prev_fire = false;
 
     // Main loop
     while (true) {
@@ -300,13 +310,19 @@ int main(void)
 
         bool press_up = (actions.up && !prev_up);
         bool press_down = (actions.down && !prev_down);
+        bool press_left = (actions.left && !prev_left);
+        bool press_right = (actions.right && !prev_right);
         bool press_action = (actions.bomb && !prev_action);
         bool press_start = (actions.start && !prev_start);
+        bool press_fire = (actions.fire && !prev_fire);
 
         prev_up = actions.up;
         prev_down = actions.down;
+        prev_left = actions.left;
+        prev_right = actions.right;
         prev_action = actions.bomb;
         prev_start = actions.start;
+        prev_fire = actions.fire;
 
         if (s_game_state == STATE_TITLE) {
             switch (s_title_substate) {
@@ -659,13 +675,15 @@ int main(void)
         } else if (s_game_state == STATE_PAUSED) {
             pause_update(press_up, press_down, press_action);
         } else if (s_game_state == STATE_RESULTS) {
-            results_update(press_start);
+            results_update(press_start, press_action);
         } else if (s_game_state == STATE_CONGRATS) {
             congrats_update(press_up, press_down, press_action);
         } else if (s_game_state == STATE_RANKINGS) {
             rankings_update(press_start || press_action);
-        } else { // STATE_OPTIONS
+        } else if (s_game_state == STATE_OPTIONS) {
             options_update(press_up, press_down, press_action);
+        } else { // STATE_SOUNDTEST
+            soundtest_update(press_up, press_down, press_left, press_right, press_action, press_fire);
         }
 
         frame++;

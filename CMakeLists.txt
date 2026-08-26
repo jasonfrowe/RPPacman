@@ -30,13 +30,17 @@ rp6502_asset(RPPacMan rankingsmap images/Rankings_map.bin)
 rp6502_asset(RPPacMan rankingstiles images/Rankings_tiles_4bpp.bin) #8x8 106 frames
 rp6502_asset(RPPacMan optionsmap images/Options_map.bin)
 rp6502_asset(RPPacMan optionstiles images/Options_tiles_4bpp.bin) #8x8 147 frames
+rp6502_asset(RPPacMan soundtestmap images/Soundtest_map.bin)
+rp6502_asset(RPPacMan soundtesttiles images/Soundtest_tiles_4bpp.bin) #8x8 123 frames
 
 # Music assets
+rp6502_asset(RPPacMan pacman00 music/tracks/PacManCE_00.BIN) #Normal game music PacManCE_00.BIN
 rp6502_asset(RPPacMan pacman01 music/tracks/PacManCE_01.BIN) #Game start jingle PacManCE_01.BIN
 rp6502_asset(RPPacMan pacman02 music/tracks/PacManCE_02.BIN) #Title screen music PacManCE_02.BIN
-rp6502_asset(RPPacMan pacman00 music/tracks/PacManCE_00.BIN) #Normal game music PacManCE_00.BIN
+rp6502_asset(RPPacMan pacman03 music/tracks/PacManCE_03.BIN) #Ranking music PacManCE_03.BIN
+rp6502_asset(RPPacMan pacman04 music/tracks/PacManCE_04.BIN) #Extra mode game music PacManCE_04.BIN
 rp6502_asset(RPPacMan pacman05 music/tracks/PacManCE_05.BIN) #Results screen music PacManCE_05.BIN (also used for Congrats screen)
-rp6502_asset(RPPacMan pacman03 music/tracks/PacManCE_03.BIN) #Ranking music PacManCE_06.BIN
+rp6502_asset(RPPacMan pacman06 music/tracks/PacManCE_06.BIN) #Unused music, included for fun PacManCE_06.BIN
 rp6502_asset(RPPacMan pacman07 music/tracks/PacManCE_07.BIN) #Options screen music PacManCE_07.BIN
 
 # SFX-channel assets (reserved OPL2 channel 5 only -- see opl2_translate.py's
@@ -68,6 +72,7 @@ target_sources(RPPacMan PRIVATE
     src/congrats.c
     src/pause.c
     src/options.c
+    src/soundtest.c
 )
 
 enable_testing()

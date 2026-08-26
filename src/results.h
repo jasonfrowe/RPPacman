@@ -8,9 +8,10 @@
 void results_init(void);
 
 // Drives the results-screen state machine one real frame at a time.
-// press_start is the same edge-triggered press as everywhere else in
-// main.c's loop; only consulted while waiting to return to the title.
-void results_update(bool press_start);
+// press_start/press_action are the same edge-triggered presses as
+// everywhere else in main.c's loop; only consulted while waiting to
+// continue past the results screen -- either one advances it.
+void results_update(bool press_start, bool press_action);
 
 // Clears every tile in TEXT_MAP_DATA to blank. Exposed for congrats.c: the
 // results screen's own score-totals digits (drawn on this same layer,

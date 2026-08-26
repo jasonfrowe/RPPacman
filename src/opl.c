@@ -59,6 +59,17 @@ void opl_silence_all() {
     }
 }
 
+// Key-off just this player's own channel range. player_advance() is shared
+// by both the music player (channels 0..MUSIC_MAX_BGM_CH) and the SFX
+// player (channel 5 only), so a loop-wrap silence step must stay scoped to
+// min_ch..max_ch -- a blanket opl_silence_all() here would cut off
+// whichever other player happens to be running concurrently.
+static void player_silence_channels(uint8_t min_ch, uint8_t max_ch) {
+    for (uint8_t i = min_ch; i <= max_ch; i++) {
+        opl_write(0xB0 + i, 0x00);
+    }
+}
+
 void opl_fifo_clear() {
     RIA.addr1 = OPL_ADDR + 2; 
     RIA.step1 = 0;
@@ -433,6 +444,12 @@ static void player_advance(music_player_t *p, uint8_t ticks, uint8_t min_ch, uin
                         p->ended = true;
                         return;
                     }
+                    // A patch left sustaining (key-on held, non-zero
+                    // sustain level) at the moment the stream wraps would
+                    // otherwise ring on top of the restarted track's own
+                    // fresh notes on that channel -- key everything off
+                    // before jumping back to byte 0.
+                    player_silence_channels(min_ch, max_ch);
                     if (lseek(p->fd, 0, OPL_SEEK_SET) < 0) {
                         p->error_state = true;
                         return;
@@ -466,6 +483,7 @@ static void player_advance(music_player_t *p, uint8_t ticks, uint8_t min_ch, uin
                     p->ended = true;
                     return;
                 }
+                player_silence_channels(min_ch, max_ch);
                 if (lseek(p->fd, 0, OPL_SEEK_SET) < 0) {
                     p->error_state = true;
                     return;

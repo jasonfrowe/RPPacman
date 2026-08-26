@@ -211,7 +211,7 @@ static void draw_totals(void) {
     write_digits(TEXT_MAP_DATA, TEXT_MAP_WIDTH, 28, 4, player.score_by_cat[SCORE_CAT_GHOST], 7);
 }
 
-void results_update(bool press_start) {
+void results_update(bool press_start, bool press_action) {
     switch (s_substate) {
 
         case RESULTS_FADE_TO_SCORE_ONLY: {
@@ -348,7 +348,7 @@ void results_update(bool press_start) {
         }
 
         case RESULTS_WAIT_FOR_START: {
-            if (press_start) {
+            if (press_start || press_action) {
                 // A qualifying score hands off to the congrats screen
                 // (initials entry, then the rankings table) instead of
                 // going straight back to the title.
