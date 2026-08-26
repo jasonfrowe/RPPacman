@@ -92,6 +92,11 @@ bool is_death_sequence_active(void) {
 void start_pacman_death_sequence(void) {
     if (s_death_seq_timer == 0) {
         s_death_seq_timer = 1;
+        // The 305-frame death sequence freezes player_update_motion()
+        // entirely, so any pellet-score popup still counting down would
+        // otherwise sit frozen on screen for the whole sequence -- up to
+        // 5 real seconds -- reading as a leftover, un-eaten pellet.
+        clear_active_pellet_popups();
         s_death_last_dir = (player.dir != DIR_NONE) ? player.dir : DIR_LEFT;
         s_ghosts_eaten_chain = 0;   // Reset scared ghost combo chain on death
         s_frightened_timer = 0;     // Cancel active frightened power pellet state on death
@@ -366,6 +371,11 @@ void check_pacman_ghost_collisions(void) {
 
                 // Set 30-frame pause for all motion & trigger eat animation
                 s_eat_pause_timer = 30;
+                // Same reasoning as start_pacman_death_sequence(): this
+                // also freezes player_update_motion(), so a pending
+                // pellet-score popup would otherwise sit frozen for the
+                // pause's duration.
+                clear_active_pellet_popups();
                 trigger_eaten_ghost_animation(i, pts);
                 // Only one ghost eaten per collision check -- otherwise
                 // two frightened ghosts overlapping Pac-Man on the same

@@ -25,6 +25,7 @@ uint8_t get_speed_level_index(void);
 
 void push_score_popup(uint16_t tile_x, uint16_t tile_y, uint8_t score_tile);
 void reset_score_popups(void);
+void clear_active_pellet_popups(void);
 void update_player_score_display(uint32_t score);
 void add_player_score(uint32_t pts, uint8_t category);
 void reset_score_history(void);

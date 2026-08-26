@@ -170,6 +170,26 @@ void reset_score_popups(void) {
     s_popup_count = 0;
 }
 
+// Unlike reset_score_popups(), this also blanks each active popup's
+// current tile before dropping it -- for mid-game freezes (Pac-Man's
+// 305-frame death sequence, a ghost's 30-frame eat pause) where the maze
+// isn't about to be redrawn/re-copied, so a merely-forgotten popup would
+// stay frozen showing its score digit for the entire freeze -- up to 5
+// real seconds for a death -- reading as a leftover, un-eaten pellet
+// sitting on the field. player_update_motion() (and therefore
+// update_score_popups()) doesn't run at all while
+// is_death_sequence_active()/is_eat_pause_active() are true, so nothing
+// would otherwise touch these until the freeze ends.
+void clear_active_pellet_popups(void) {
+    for (uint8_t i = 0; i < s_popup_count; i++) {
+        uint16_t offset = s_score_popups[i].tile_y * MAZE_MAP_WIDTH + s_score_popups[i].tile_x;
+        RIA.addr0 = MAZE_MAP_DATA + offset;
+        RIA.step0 = 1;
+        RIA.rw0 = 0;
+    }
+    s_popup_count = 0;
+}
+
 static void update_score_popups(void) {
     for (int8_t i = 0; i < (int8_t)s_popup_count; i++) {
         if (!s_score_popups[i].active) continue;
