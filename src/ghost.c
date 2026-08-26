@@ -99,7 +99,7 @@ void start_pacman_death_sequence(void) {
         set_frightened_palette(false);
         reset_player_on_death();    // Reset Pac-Dots eaten multiplier tier back to 10 points (0-59 dots)
         clear_all_active_score_popups(); // Remove any ghost or prize score popups off-screen
-        sfx_play("ROM:sfxdeath");
+        sfx_play("ROM:sfxdeath", SFX_PRIORITY_TOP);
     }
 }
 
@@ -178,7 +178,7 @@ static uint8_t s_active_eat_anim_ghost = 0;
 
 void trigger_eaten_ghost_animation(uint8_t ghost_index, uint32_t pts) {
     s_active_eat_anim_ghost = ghost_index;
-    sfx_play("ROM:sfxghosteat");
+    sfx_play("ROM:sfxghosteat", SFX_PRIORITY_TOP);
 
     // Use single score display slot. Any existing score display is overwritten by the new one.
     eaten_score_anim_t *sa = &s_single_score_anim;

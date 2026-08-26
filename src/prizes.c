@@ -179,7 +179,7 @@ static void copy_single_column_with_offset(uint8_t level, uint16_t tx, uint8_t o
 }
 
 static void trigger_maze_transition(uint8_t target_level, bool is_right_side) {
-    sfx_play("ROM:sfxmazeup");
+    sfx_play("ROM:sfxmazeup", SFX_PRIORITY_TOP);
     uint8_t idx = is_right_side ? 1 : 0;
     s_transitions[idx].active = true;
     s_transitions[idx].munchers_active = true;
@@ -329,7 +329,7 @@ void update_side_pellets_status(void) {
         left_prize_sprite = get_side_prize_sprite_index(left_prize_count);
         left_prize_count++;
         prizes[0].sparkle_timer = 0;
-        sfx_play("ROM:sfxprizeplace");
+        sfx_play("ROM:sfxprizeplace", SFX_PRIORITY_TOP);
     }
 
     // 2. Check right side clear condition (O(1) counter check)
@@ -338,7 +338,7 @@ void update_side_pellets_status(void) {
         right_prize_sprite = get_side_prize_sprite_index(right_prize_count);
         right_prize_count++;
         prizes[1].sparkle_timer = 0;
-        sfx_play("ROM:sfxprizeplace");
+        sfx_play("ROM:sfxprizeplace", SFX_PRIORITY_TOP);
     }
 }
 

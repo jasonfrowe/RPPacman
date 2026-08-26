@@ -546,6 +546,7 @@ void update_music() {
 
 static const char *s_sfx_ambient_file = 0; // last-set ambient path, for fallback
 static bool s_sfx_is_oneshot = false;
+static uint8_t s_sfx_current_priority = 0; // priority of the active one-shot, 0 while none is playing
 
 // Every switch on the SFX channel risks leaving a stuck note: a track can
 // end (or get cut off mid-playback by a newer trigger) with channel 5's
@@ -570,8 +571,17 @@ void sfx_set_ambient(const char *filename) {
     // channel's the update loop switches to it once the one-shot ends.
 }
 
-void sfx_play(const char *filename) {
+void sfx_play(const char *filename, uint8_t priority) {
+    if (s_sfx_is_oneshot && priority < s_sfx_current_priority) {
+        // A lower-priority event (sfxpellet) while a higher-priority one
+        // is still playing -- drop it rather than cutting the important
+        // cue off. Dots are eaten far too often for this to otherwise
+        // ever let death/ghost-eat/maze-transition/prize/extra-life
+        // finish.
+        return;
+    }
     s_sfx_is_oneshot = true;
+    s_sfx_current_priority = priority;
     sfx_silence_channel();
     player_open(&s_sfx_player, filename, false);
 }
@@ -580,6 +590,7 @@ void sfx_stop(void) {
     player_stop(&s_sfx_player);
     s_sfx_ambient_file = 0;
     s_sfx_is_oneshot = false;
+    s_sfx_current_priority = 0;
     sfx_silence_channel();
 }
 
@@ -604,6 +615,7 @@ void update_sfx_advance(uint8_t ticks) {
     player_advance(&s_sfx_player, ticks, 5, 5);
     if (s_sfx_is_oneshot && s_sfx_player.ended) {
         s_sfx_is_oneshot = false;
+        s_sfx_current_priority = 0;
         sfx_silence_channel();
         if (s_sfx_ambient_file) {
             player_open(&s_sfx_player, s_sfx_ambient_file, true);

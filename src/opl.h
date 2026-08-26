@@ -36,13 +36,26 @@ extern void music_resume(void);
 
 // The reserved SFX channel (5): a fully independent second audio lane
 // alongside the always-playing gameplay music. sfx_set_ambient() picks
-// what loops there by default (the frightened/normal ambient tracks);
+// what loops there by default (the frightened/normal ambient tracks,
+// lowest priority -- they only ever play when no one-shot is active);
 // sfx_play() cuts in a one-shot event stinger that automatically falls
 // back to the current ambient once it finishes. update_sfx_advance()
 // must be called once per real vsync tick, the same way
 // update_music_advance() is.
+//
+// One-shots carry a priority so a torrent of low-priority events (dot
+// pellets, eaten many times a second) can't cut off a rarer, more
+// important cue (death, eating a ghost, a maze transition, a prize
+// appearing, an extra life) that's still playing: sfx_play() only
+// starts a new one-shot if nothing is currently playing, or the new one
+// is at least as high priority as whatever's active. A same-or-higher
+// priority call still always cuts in ("newest wins" within a tier); a
+// strictly lower one is dropped outright rather than queued.
+#define SFX_PRIORITY_MEDIUM 1 // sfxpellet
+#define SFX_PRIORITY_TOP    2 // sfxdeath/sfxghosteat/sfxmazeup/sfxprizeplace/sfxextralife
+
 extern void sfx_set_ambient(const char* filename);
-extern void sfx_play(const char* filename);
+extern void sfx_play(const char* filename, uint8_t priority);
 extern void sfx_stop(void);
 extern void sfx_pause(void);
 extern void sfx_resume(void);

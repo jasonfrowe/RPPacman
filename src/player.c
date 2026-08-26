@@ -248,7 +248,7 @@ void add_player_score(uint32_t pts, uint8_t category) {
         player.lives++;
         update_player_lives_display(player.lives);
         trigger_extra_life_blink();
-        sfx_play("ROM:sfxextralife");
+        sfx_play("ROM:sfxextralife", SFX_PRIORITY_TOP);
         s_next_extra_life_threshold += 20000;
     }
 }
@@ -287,7 +287,7 @@ static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
         // pellet already gets its own, bigger audible cue when the
         // frightened ambient loop takes over the SFX channel.
         if (tile_index == 116) {
-            sfx_play("ROM:sfxpellet");
+            sfx_play("ROM:sfxpellet", SFX_PRIORITY_MEDIUM);
         }
 
         uint32_t dot_pts = get_current_dot_value(player.pellets_eaten);
