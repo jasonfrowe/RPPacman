@@ -581,6 +581,12 @@ uint16_t get_game_elapsed_frames(void) {
     return 18000 - s_game_timer_frames;
 }
 
+// Frames remaining until the 5-minute timer expires -- countdown.c uses
+// this directly rather than re-deriving it from get_game_elapsed_frames().
+uint16_t get_game_remaining_frames(void) {
+    return s_game_timer_frames;
+}
+
 void update_game_timer_display(void) {
     if (s_game_timer_frames > 0 && is_game_motion_started()) {
         s_game_timer_frames--;

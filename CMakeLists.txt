@@ -76,6 +76,7 @@ target_sources(RPPacMan PRIVATE
     src/pause.c
     src/options.c
     src/soundtest.c
+    src/countdown.c
 )
 
 enable_testing()

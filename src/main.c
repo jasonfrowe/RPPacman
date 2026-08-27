@@ -15,6 +15,7 @@
 #include "pause.h"
 #include "options.h"
 #include "soundtest.h"
+#include "countdown.h"
 
 typedef enum {
     STATE_TITLE,
@@ -231,6 +232,7 @@ void start_normal_game(void) {
     update_player_score_display(player.score);
     update_player_lives_display(player.lives);
     reset_game_timer();
+    countdown_reset();
 
     xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, x_pos_px, player.x_pos_px);
     xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, y_pos_px, player.y_pos_px);
@@ -520,6 +522,7 @@ int main(void)
                         update_player_score_display(player.score);
                         update_player_lives_display(player.lives);
                         reset_game_timer();
+                        countdown_reset();
 
                         xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, x_pos_px, player.x_pos_px);
                         xram0_struct_set(PLAYER_CONFIG, vga_mode5_sprite_t, y_pos_px, player.y_pos_px);
@@ -650,12 +653,19 @@ int main(void)
             }
 
             // 2. STATE_GAMEPLAY Updates
-            player_update_motion(&actions);
-            ghost_update_motion();
-            prize_update_motion();
-            update_maze_munchers_animation();
-            update_lives_blink_animation();
+            // Once the end-of-game countdown reaches its FINISH! hold,
+            // normal motion stops -- the game is effectively over, just
+            // waiting to hand off to the results screen.
+            if (!countdown_should_freeze()) {
+                player_update_motion(&actions);
+                ghost_update_motion();
+                prize_update_motion();
+                update_maze_munchers_animation();
+                update_lives_blink_animation();
+            }
             update_game_timer_display();
+
+            countdown_update();
 
             // Start playing gameplay music (PACMAN00.BIN, remapped to
             // PacManCE_00.BIN) once Pac-Man begins to move
@@ -665,10 +675,11 @@ int main(void)
                 sfx_set_ambient("ROM:sfxnormal");
             }
 
-            if (is_game_timer_expired()) {
-                // 5 minute timer expired -> End game, show results screen
+            if (countdown_finished()) {
+                // 5 minute timer expired and the FINISH! hold completed ->
+                // End game, show results screen
                 start_results_screen();
-            } else {
+            } else if (!countdown_should_freeze()) {
                 // Update maze palette animation
                 tile_mode2_palette_update(frame);
             }

@@ -140,6 +140,7 @@ void reset_game_timer(void);
 void update_game_timer_display(void);
 bool is_game_timer_expired(void);
 uint16_t get_game_elapsed_frames(void);
+uint16_t get_game_remaining_frames(void);
 
 void update_ready_go_animation(uint16_t timer_frame);
 void clear_ready_go_animation(void);

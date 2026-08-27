@@ -90,7 +90,7 @@
 #define TITLE_MAP_HEIGHT        30                  // Height of the title map in tiles
 
 #define TITLE_TILES_DATA        (TITLE_MAP_DATA + TITLE_MAP_DATA_SIZE) // Address for title tiles data
-#define TITLE_TILES_DATA_SIZE   (0x14E0U)           // Size of title tiles data (5248 bytes, 164 tiles * 8x8 pixels * 4bpp)
+#define TITLE_TILES_DATA_SIZE   (0x1420U)           // Size of title tiles data (5152 bytes, 161 tiles * 8x8 pixels * 4bpp)
 
 #define SPRITE_DATA_END        (TITLE_TILES_DATA + TITLE_TILES_DATA_SIZE) // End address of sprite data
 
