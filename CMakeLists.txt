@@ -32,6 +32,9 @@ rp6502_asset(RPPacMan optionsmap images/Options_map.bin)
 rp6502_asset(RPPacMan optionstiles images/Options_tiles_4bpp.bin) #8x8 147 frames
 rp6502_asset(RPPacMan soundtestmap images/Soundtest_map.bin)
 rp6502_asset(RPPacMan soundtesttiles images/Soundtest_tiles_4bpp.bin) #8x8 123 frames
+rp6502_asset(RPPacMan readygopt1 images/ReadyGo_pt1_tiles_4bpp.bin) #16x16 52 frames trimmed to 16x8
+rp6502_asset(RPPacMan readygopt2 images/ReadyGo_pt2_tiles_4bpp.bin) #16x16 52 frames trimmed to 16x8
+rp6502_asset(RPPacMan readygopt3 images/ReadyGo_pt3_tiles_4bpp.bin) #16x16 52 frames trimmed to 16x8
 
 # Music assets
 rp6502_asset(RPPacMan pacman00 music/tracks/PacManCE_00.BIN) #Normal game music PacManCE_00.BIN
