@@ -716,19 +716,34 @@ static void update_ghost_outside_movement(int ghost_index) {
                     int16_t diff_x = next_tx - target_tx;
                     int16_t diff_y = next_ty - target_ty;
 
-                    // The maze wraps both axes (horizontal tunnel,
-                    // vertical tunnel), but target/next tile coordinates
-                    // are plain unwrapped numbers -- a ghost one tile
-                    // from the tunnel mouth and Pac-Man one tile past it
-                    // on the far side would otherwise measure as almost
-                    // the full map width/height apart instead of 2 tiles,
-                    // which could steer a ghost away from the tunnel
-                    // right as Pac-Man wraps through it. Folding to the
-                    // shorter of the direct or wrapped-around distance
-                    // fixes that without needing to know where the
-                    // tunnel actually is.
-                    if (diff_x > (MAZE_MAP_WIDTH / 2)) diff_x -= MAZE_MAP_WIDTH;
-                    else if (diff_x < -(MAZE_MAP_WIDTH / 2)) diff_x += MAZE_MAP_WIDTH;
+                    // The horizontal tunnel wraps, but target/next tile
+                    // coordinates are plain unwrapped numbers -- a ghost
+                    // one tile from the tunnel mouth and Pac-Man one tile
+                    // past it on the far side would otherwise measure as
+                    // almost the full map width apart instead of 2 tiles,
+                    // which could steer a ghost away from the tunnel right
+                    // as Pac-Man wraps through it. Folding to the shorter
+                    // of the direct or wrapped-around distance fixes that.
+                    //
+                    // Must be gated the same way suppress_lr_turns gates
+                    // the vertical fold below -- only when THIS ghost is
+                    // actually at the tunnel mouth right now. Inky's target
+                    // tile is a vector extrapolation (pivot + (pivot -
+                    // Blinky)) that routinely lands far outside the actual
+                    // 0..46 map -- not a real wrapped position, just a
+                    // number bigger than half the map width. Folding it
+                    // unconditionally "corrected" that arbitrary distance
+                    // into something small and essentially random every
+                    // time Inky was nowhere near either tunnel mouth,
+                    // which is most of the game -- exactly why Inky read
+                    // as aimless/fleeing instead of ambushing: its own
+                    // distance metric was noise most of the time. Blinky/
+                    // Pinky/Clyde's targets stay near Pac-Man's own
+                    // always-in-bounds tile and were rarely affected.
+                    if (is_in_horizontal_tunnel) {
+                        if (diff_x > (MAZE_MAP_WIDTH / 2)) diff_x -= MAZE_MAP_WIDTH;
+                        else if (diff_x < -(MAZE_MAP_WIDTH / 2)) diff_x += MAZE_MAP_WIDTH;
+                    }
                     // Unlike the horizontal axis, the vertical "tunnel" is
                     // NOT a real wrap across the whole map -- it only
                     // exists at the handful of columns verified by
