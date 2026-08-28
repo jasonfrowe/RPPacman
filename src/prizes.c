@@ -211,7 +211,7 @@ static uint16_t count_level_side_pellets(uint8_t level, bool is_right_side) {
     return count_level_side_pellets_normal(level, is_right_side);
 }
 
-static void copy_single_column_with_offset_normal(uint8_t level, uint16_t tx, uint8_t offset_val) {
+static void copy_single_column_with_offset_normal(uint8_t level, uint16_t tx, uint8_t offset_val, bool first_pass) {
     uint16_t src_map_base = ALL_MAZE_MAPS_DATA + ((uint16_t)level * (MAZE_MAP_WIDTH * MAZE_MAP_HEIGHT));
 
     for (uint16_t ty = 4; ty <= 26; ty++) {
@@ -220,6 +220,22 @@ static void copy_single_column_with_offset_normal(uint8_t level, uint16_t tx, ui
         RIA.addr0 = src_map_base + map_offset;
         RIA.step0 = 1;
         uint8_t tile_val = RIA.rw0;
+
+        // A wall tile (1-114) gets re-stamped every wave step so its
+        // inflate-then-settle animation below can play out -- but a
+        // pellet/blank source tile (0, 116-124) never changes appearance
+        // over the course of the wave, so it's only ever written once, on
+        // the column's first pass. Skipping later passes for it matters:
+        // if the player eats that pellet (setting MAZE_MAP_DATA to 0)
+        // while this column's wave is still mid-flight, a later pass
+        // blindly re-copying the source's still-116 value would silently
+        // resurrect it -- confirmed live at EXTRA's higher speeds, where
+        // Pac-Man can reach and eat a pellet before its column's ~112-
+        // frame wave cycle finishes, forcing a second, redundant eat.
+        bool is_wall_range = (tile_val > 0 && tile_val <= 114);
+        if (!first_pass && !is_wall_range) {
+            continue;
+        }
 
         // Apply wave offset only to non-blank tiles with indices 1 <= tile_val <= 114
         // -- but never let it push the result to 116 or above. is_wall_tile()
@@ -234,7 +250,7 @@ static void copy_single_column_with_offset_normal(uint8_t level, uint16_t tx, ui
         // tiles sit in the 108-114 range that would cross 116 with the
         // offset's old, unclamped max of +7.
         uint8_t final_tile = tile_val;
-        if (offset_val > 0 && tile_val > 0 && tile_val <= 114) {
+        if (offset_val > 0 && is_wall_range) {
             uint16_t inflated = (uint16_t)tile_val + offset_val;
             if (inflated < 116) final_tile = (uint8_t)inflated;
         }
@@ -245,9 +261,10 @@ static void copy_single_column_with_offset_normal(uint8_t level, uint16_t tx, ui
     }
 }
 
-// Same wave-offset clamping as the normal path above, just sourced from a
-// single linear ROM read instead of ALL_MAZE_MAPS_DATA.
-static void copy_single_column_with_offset_extra(uint8_t level, uint16_t tx, uint8_t offset_val) {
+// Same wave-offset clamping and first-pass-only pellet/blank write as the
+// normal path above, just sourced from a single linear ROM read instead
+// of ALL_MAZE_MAPS_DATA.
+static void copy_single_column_with_offset_extra(uint8_t level, uint16_t tx, uint8_t offset_val, bool first_pass) {
     const char *filename;
     uint8_t file_level;
     get_extra_maze_file(level, &filename, &file_level);
@@ -265,8 +282,13 @@ static void copy_single_column_with_offset_extra(uint8_t level, uint16_t tx, uin
         uint16_t ty = 4 + i;
         uint8_t tile_val = buf[i];
 
+        bool is_wall_range = (tile_val > 0 && tile_val <= 114);
+        if (!first_pass && !is_wall_range) {
+            continue;
+        }
+
         uint8_t final_tile = tile_val;
-        if (offset_val > 0 && tile_val > 0 && tile_val <= 114) {
+        if (offset_val > 0 && is_wall_range) {
             uint16_t inflated = (uint16_t)tile_val + offset_val;
             if (inflated < 116) final_tile = (uint8_t)inflated;
         }
@@ -307,12 +329,12 @@ static void load_extra_maze_level_to_map(uint8_t level) {
     close(fd);
 }
 
-static void copy_single_column_with_offset(uint8_t level, uint16_t tx, uint8_t offset_val) {
+static void copy_single_column_with_offset(uint8_t level, uint16_t tx, uint8_t offset_val, bool first_pass) {
     if (get_game_mode() == GAME_MODE_EXTRA) {
-        copy_single_column_with_offset_extra(level, tx, offset_val);
+        copy_single_column_with_offset_extra(level, tx, offset_val, first_pass);
         return;
     }
-    copy_single_column_with_offset_normal(level, tx, offset_val);
+    copy_single_column_with_offset_normal(level, tx, offset_val, first_pass);
 }
 
 static void trigger_maze_transition(uint8_t target_level, bool is_right_side) {
@@ -427,7 +449,7 @@ void update_maze_munchers_animation(void) {
                 // Update column tiles only on the exact frame the offset changes
                 if (elapsed == 0 || (elapsed % 16 == 0 && step <= 7)) {
                     uint16_t tx = s_transitions[s].is_right_side ? (28 + col) : (18 - col);
-                    copy_single_column_with_offset(s_transitions[s].target_level, tx, offset_val);
+                    copy_single_column_with_offset(s_transitions[s].target_level, tx, offset_val, elapsed == 0);
                     check_and_reset_stuck_ghosts();
                 }
             } else {
