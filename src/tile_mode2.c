@@ -564,8 +564,21 @@ void update_lives_blink_animation(void) {
 // 5-minute countdown timer (5:00 -> 300 seconds -> 18000 frames at 60 FPS)
 static uint16_t s_game_timer_frames = 18000;
 
+// Latches true the first time is_game_motion_started() is seen true (i.e.
+// the player's very first move of the game/life), and stays true from
+// then on regardless of later is_game_motion_started() resets -- notably
+// the one at t==172 of the death-sequence, which otherwise paused the
+// clock for the whole respawn (is_game_motion_started() only gates the
+// pre-first-move grace period, it was never meant to double as "pause
+// during death"). Only reset_game_timer() clears it, so a genuine pause
+// (STATE_PAUSED, which simply stops calling update_game_timer_display()
+// at all) remains the only thing that stops the clock once a life/level
+// is under way.
+static bool s_timer_active = false;
+
 void reset_game_timer(void) {
     s_game_timer_frames = 18000; // 5:00 (300 seconds * 60 FPS)
+    s_timer_active = false;
     update_game_timer_display();
 }
 
@@ -588,7 +601,10 @@ uint16_t get_game_remaining_frames(void) {
 }
 
 void update_game_timer_display(void) {
-    if (s_game_timer_frames > 0 && is_game_motion_started()) {
+    if (!s_timer_active && is_game_motion_started()) {
+        s_timer_active = true;
+    }
+    if (s_game_timer_frames > 0 && s_timer_active) {
         s_game_timer_frames--;
     }
 
