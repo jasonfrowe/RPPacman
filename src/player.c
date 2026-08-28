@@ -375,9 +375,62 @@ const uint16_t SPEED_TABLE[22] = {
     0x0255, // Level 21 (Crown):             2.332 px/frame (Max Cap)
 };
 
+// EXTRA's own 22-level Pac-Man speed ramp -- starts faster than NORMAL's
+// own level 0 (~1.8 px/frame, matching a Championship-Edition-style
+// harder start) but lands on the exact same level-21 cap NORMAL already
+// tops out at (0x0255): a straight line in 8.8 fixed point, 0x01D7 plus a
+// flat +0x06 per level, so it never invents a new top speed of its own.
+const uint16_t EXTRA_SPEED_TABLE[22] = {
+    0x01D7, // Level 0:  1.840 px/frame
+    0x01DD, // Level 1:  1.863 px/frame
+    0x01E3, // Level 2:  1.887 px/frame
+    0x01E9, // Level 3:  1.910 px/frame
+    0x01EF, // Level 4:  1.934 px/frame
+    0x01F5, // Level 5:  1.957 px/frame
+    0x01FB, // Level 6:  1.980 px/frame
+    0x0201, // Level 7:  2.004 px/frame
+    0x0207, // Level 8:  2.027 px/frame
+    0x020D, // Level 9:  2.051 px/frame
+    0x0213, // Level 10: 2.074 px/frame
+    0x0219, // Level 11: 2.098 px/frame
+    0x021F, // Level 12: 2.121 px/frame
+    0x0225, // Level 13: 2.145 px/frame
+    0x022B, // Level 14: 2.168 px/frame
+    0x0231, // Level 15: 2.191 px/frame
+    0x0237, // Level 16: 2.215 px/frame
+    0x023D, // Level 17: 2.238 px/frame
+    0x0243, // Level 18: 2.262 px/frame
+    0x0249, // Level 19: 2.285 px/frame
+    0x024F, // Level 20: 2.309 px/frame
+    0x0255, // Level 21: 2.332 px/frame (matches SPEED_TABLE[21] exactly)
+};
+
 static uint16_t s_speed_subpixel_x = 0;
 static uint16_t s_speed_subpixel_y = 0;
 
+static game_mode_t s_game_mode = GAME_MODE_NORMAL;
+
+void set_game_mode(game_mode_t mode) {
+    s_game_mode = mode;
+}
+
+game_mode_t get_game_mode(void) {
+    return s_game_mode;
+}
+
+// Picks SPEED_TABLE vs EXTRA_SPEED_TABLE by game mode -- every call site
+// that used to index SPEED_TABLE[speed_lvl] directly (in both this file
+// and ghost.c, for the several ghost-house sub-speeds that scale off
+// Pac-Man's own base rate) now goes through this instead.
+uint16_t get_player_base_speed_fp(uint8_t speed_lvl) {
+    return (s_game_mode == GAME_MODE_EXTRA) ? EXTRA_SPEED_TABLE[speed_lvl] : SPEED_TABLE[speed_lvl];
+}
+
+// Same prize-count-driven index for both modes -- EXTRA's 22 mazes (vs
+// NORMAL's 11) still award one prize per side-clear, so this naturally
+// reaches 21 right as the last EXTRA maze clears. Only the table it's
+// used to index (get_player_base_speed_fp() above, get_ghost_base_speed_fp()
+// in ghost.c) differs by mode.
 uint8_t get_speed_level_index(void) {
     uint8_t max_count = (left_prize_count > right_prize_count) ? left_prize_count : right_prize_count;
     if (max_count > 21) max_count = 21;
@@ -539,7 +592,7 @@ void player_update_motion(const input_actions_t *actions) {
         get_dir_offset(player.dir, &dx, &dy);
 
         uint8_t speed_lvl = get_speed_level_index();
-        uint16_t speed_fp = SPEED_TABLE[speed_lvl];
+        uint16_t speed_fp = get_player_base_speed_fp(speed_lvl);
 
         int16_t move_pixels = 0;
         if (dx != 0) {

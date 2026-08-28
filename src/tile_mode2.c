@@ -6,6 +6,7 @@
 #include "ghost.h"
 #include "opl.h"
 #include "hiscores.h"
+#include "player.h"
 
 unsigned MAZE_CONFIG;
 unsigned TEXT_MAP_CONFIG;
@@ -562,7 +563,11 @@ void update_lives_blink_animation(void) {
 }
 
 // 5-minute countdown timer (5:00 -> 300 seconds -> 18000 frames at 60 FPS)
-static uint16_t s_game_timer_frames = 18000;
+// for NORMAL; EXTRA runs a shorter 3:00 (10800 frames).
+#define NORMAL_GAME_TIMER_FRAMES 18000
+#define EXTRA_GAME_TIMER_FRAMES  10800
+static uint16_t s_game_timer_frames = NORMAL_GAME_TIMER_FRAMES;
+static uint16_t s_game_timer_total_frames = NORMAL_GAME_TIMER_FRAMES;
 
 // Latches true the first time is_game_motion_started() is seen true (i.e.
 // the player's very first move of the game/life), and stays true from
@@ -577,7 +582,10 @@ static uint16_t s_game_timer_frames = 18000;
 static bool s_timer_active = false;
 
 void reset_game_timer(void) {
-    s_game_timer_frames = 18000; // 5:00 (300 seconds * 60 FPS)
+    s_game_timer_total_frames = (get_game_mode() == GAME_MODE_EXTRA)
+        ? EXTRA_GAME_TIMER_FRAMES  // 3:00
+        : NORMAL_GAME_TIMER_FRAMES; // 5:00
+    s_game_timer_frames = s_game_timer_total_frames;
     s_timer_active = false;
     update_game_timer_display();
 }
@@ -587,11 +595,10 @@ bool is_game_timer_expired(void) {
 }
 
 // Elapsed gameplay frames since reset_game_timer(), for the results
-// screen's 10-second history buckets -- the 5-minute cap means this
-// never exceeds 18000, which lines up exactly with 30 buckets of 600
-// frames (10s) each.
+// screen's 10-second history buckets -- EXTRA's shorter 3:00 game just
+// leaves the history buckets past 18:00/10s = bucket 18 empty.
 uint16_t get_game_elapsed_frames(void) {
-    return 18000 - s_game_timer_frames;
+    return s_game_timer_total_frames - s_game_timer_frames;
 }
 
 // Frames remaining until the 5-minute timer expires -- countdown.c uses

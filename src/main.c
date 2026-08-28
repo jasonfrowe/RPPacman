@@ -406,6 +406,21 @@ int main(void)
                     if (press_action) {
                         if (s_menu_selection == 0) {
                             // "NORMAL" selected -> Begin game start transition sequence!
+                            set_game_mode(GAME_MODE_NORMAL);
+                            set_pacman_cursor_hidden();
+                            music_stop();
+                            title_anim_reset();
+                            s_title_substate = TITLE_SUBSTATE_GAME_START_WAIT_40;
+                            s_title_timer = 0;
+                        } else if (s_menu_selection == 1) {
+                            // "EXTRA" selected -> same transition sequence as
+                            // NORMAL; reset_prizes_and_mazes_level()/
+                            // reset_game_timer()/get_speed_level_index() and
+                            // the gameplay-music pick further down all key
+                            // off get_game_mode() to load R_Mazes_b.bin's
+                            // level 0, run the 3:00 timer, lock top speed,
+                            // and play pacman04 instead.
+                            set_game_mode(GAME_MODE_EXTRA);
                             set_pacman_cursor_hidden();
                             music_stop();
                             title_anim_reset();
@@ -578,10 +593,10 @@ int main(void)
                         clear_player_queued_dir();
                         set_game_motion_started(true);
 
-                        // Start playing gameplay music (PACMAN00.BIN, now
-                        // remapped in CMakeLists.txt to PacManCE_00.BIN)
+                        // Start playing gameplay music -- pacman00 for
+                        // NORMAL, pacman04 for EXTRA.
                         s_game_bgm_playing = true;
-                        music_init("ROM:pacman00");
+                        music_init(get_game_mode() == GAME_MODE_EXTRA ? "ROM:pacman04" : "ROM:pacman00");
                         sfx_set_ambient("ROM:sfxnormal");
                     }
                     break;

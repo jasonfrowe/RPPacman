@@ -12,7 +12,17 @@
 #define DIR_DOWN  4
 
 extern const uint16_t SPEED_TABLE[22];
+extern const uint16_t EXTRA_SPEED_TABLE[22];
 uint8_t get_speed_level_index(void);
+uint16_t get_player_base_speed_fp(uint8_t speed_lvl);
+
+// NORMAL cycles through R_Mazes.bin's 11 levels at the usual progressive
+// speed ramp (get_speed_level_index() derived from prizes collected).
+// EXTRA starts on R_Mazes_b.bin/R_Mazes_c.bin's 22-level set and locks
+// ghosts/Pac-Man at the top speed (SPEED_TABLE[21]) for the whole game.
+typedef enum { GAME_MODE_NORMAL, GAME_MODE_EXTRA } game_mode_t;
+void set_game_mode(game_mode_t mode);
+game_mode_t get_game_mode(void);
 
 // Score source categories, tracked separately for the results screen's
 // grand totals and its 10-second-interval history buckets.

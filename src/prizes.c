@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "constants.h"
 #include "tile_mode2.h"
 #include "sprite_mode5.h"
@@ -19,6 +21,8 @@ static bool left_prize_active = false;
 static bool right_prize_active = false;
 static uint8_t left_prize_sprite = 49;
 static uint8_t right_prize_sprite = 49;
+
+static void load_extra_maze_level_to_map(uint8_t level);
 
 static uint8_t get_side_prize_sprite_index(uint8_t count) {
     uint16_t idx = 49 + (uint16_t)count;
@@ -104,17 +108,24 @@ void reset_prizes_and_mazes_level(void) {
         xram0_struct_set(muncher_config, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
     }
 
-    // Re-copy Level 0 map into MAZE_MAP_DATA in XRAM
-    uint16_t map0_base = ALL_MAZE_MAPS_DATA;
-    uint16_t size = MAZE_MAP_WIDTH * MAZE_MAP_HEIGHT;
+    // Re-copy Level 0 map into MAZE_MAP_DATA in XRAM -- NORMAL from the
+    // already-resident ALL_MAZE_MAPS_DATA (R_Mazes.bin), EXTRA straight
+    // from R_Mazes_b.bin on ROM (see load_extra_maze_level_to_map()).
     xram0_struct_set(MAZE_CONFIG, vga_mode2_config_t, xram_data_ptr, MAZE_MAP_DATA);
-    
-    RIA.addr0 = MAZE_MAP_DATA;
-    RIA.step0 = 1;
-    RIA.addr1 = map0_base;
-    RIA.step1 = 1;
-    for (uint16_t i = 0; i < size; i++) {
-        RIA.rw0 = RIA.rw1;
+
+    if (get_game_mode() == GAME_MODE_EXTRA) {
+        load_extra_maze_level_to_map(0);
+    } else {
+        uint16_t map0_base = ALL_MAZE_MAPS_DATA;
+        uint16_t size = MAZE_MAP_WIDTH * MAZE_MAP_HEIGHT;
+
+        RIA.addr0 = MAZE_MAP_DATA;
+        RIA.step0 = 1;
+        RIA.addr1 = map0_base;
+        RIA.step1 = 1;
+        for (uint16_t i = 0; i < size; i++) {
+            RIA.rw0 = RIA.rw1;
+        }
     }
 
     init_side_pellet_counters();
@@ -123,7 +134,31 @@ void reset_prizes_and_mazes_level(void) {
 static uint16_t left_side_pellets_remaining = 0;
 static uint16_t right_side_pellets_remaining = 0;
 
-static uint16_t count_level_side_pellets(uint8_t level, bool is_right_side) {
+// EXTRA's 22 levels (0..21) are split across two ROM files of 11 levels
+// each -- R_Mazes_b.bin (0..10) and R_Mazes_c.bin (11..21) -- since only
+// one file's worth of data can be staged in ALL_MAZE_MAPS_DATA at a time,
+// and left/right sides can independently be several levels apart (each
+// clears pellets and advances on its own schedule), staging one there
+// could yank the data out from under the other side mid-transition.
+// EXTRA instead reads each side's data straight from ROM on demand, never
+// touching ALL_MAZE_MAPS_DATA/R_Mazes.bin (still reserved for NORMAL).
+//
+// Both R_Mazes_b.bin and R_Mazes_c.bin are stored column-major per level
+// (tools/reorder_maze_columns.py) -- for each level, 47 columns of 30
+// contiguous row bytes each -- so reading "one column of one level"
+// (what both the pellet count and the transition wave need) is a single
+// linear read instead of 23 scattered ones.
+static void get_extra_maze_file(uint8_t level, const char **filename, uint8_t *file_level) {
+    if (level >= 11) {
+        *filename = "ROM:rmazesc";
+        *file_level = level - 11;
+    } else {
+        *filename = "ROM:rmazesb";
+        *file_level = level;
+    }
+}
+
+static uint16_t count_level_side_pellets_normal(uint8_t level, bool is_right_side) {
     uint16_t src_map_base = ALL_MAZE_MAPS_DATA + ((uint16_t)level * (MAZE_MAP_WIDTH * MAZE_MAP_HEIGHT));
     uint16_t start_x = is_right_side ? 28 : 0;
     uint16_t end_x   = is_right_side ? 46 : 18;
@@ -144,7 +179,39 @@ static uint16_t count_level_side_pellets(uint8_t level, bool is_right_side) {
     return count;
 }
 
-static void copy_single_column_with_offset(uint8_t level, uint16_t tx, uint8_t offset_val) {
+static uint16_t count_level_side_pellets_extra(uint8_t level, bool is_right_side) {
+    const char *filename;
+    uint8_t file_level;
+    get_extra_maze_file(level, &filename, &file_level);
+
+    int fd = open(filename, O_RDONLY);
+    if (fd < 0) return 0;
+
+    uint16_t start_x = is_right_side ? 28 : 0;
+    uint16_t end_x   = is_right_side ? 46 : 18;
+    uint16_t count = 0;
+    long level_base = (long)file_level * (MAZE_MAP_WIDTH * MAZE_MAP_HEIGHT);
+
+    for (uint16_t tx = start_x; tx <= end_x; tx++) {
+        uint8_t buf[23]; // rows 4..26
+        lseek(fd, level_base + (long)tx * MAZE_MAP_HEIGHT + 4, 0);
+        read(fd, buf, sizeof(buf));
+        for (uint16_t i = 0; i < sizeof(buf); i++) {
+            if (buf[i] == 116 || buf[i] == 117) count++;
+        }
+    }
+    close(fd);
+    return count;
+}
+
+static uint16_t count_level_side_pellets(uint8_t level, bool is_right_side) {
+    if (get_game_mode() == GAME_MODE_EXTRA) {
+        return count_level_side_pellets_extra(level, is_right_side);
+    }
+    return count_level_side_pellets_normal(level, is_right_side);
+}
+
+static void copy_single_column_with_offset_normal(uint8_t level, uint16_t tx, uint8_t offset_val) {
     uint16_t src_map_base = ALL_MAZE_MAPS_DATA + ((uint16_t)level * (MAZE_MAP_WIDTH * MAZE_MAP_HEIGHT));
 
     for (uint16_t ty = 4; ty <= 26; ty++) {
@@ -176,6 +243,76 @@ static void copy_single_column_with_offset(uint8_t level, uint16_t tx, uint8_t o
         RIA.step0 = 1;
         RIA.rw0 = final_tile;
     }
+}
+
+// Same wave-offset clamping as the normal path above, just sourced from a
+// single linear ROM read instead of ALL_MAZE_MAPS_DATA.
+static void copy_single_column_with_offset_extra(uint8_t level, uint16_t tx, uint8_t offset_val) {
+    const char *filename;
+    uint8_t file_level;
+    get_extra_maze_file(level, &filename, &file_level);
+
+    int fd = open(filename, O_RDONLY);
+    if (fd < 0) return;
+
+    long level_base = (long)file_level * (MAZE_MAP_WIDTH * MAZE_MAP_HEIGHT);
+    uint8_t buf[23]; // rows 4..26
+    lseek(fd, level_base + (long)tx * MAZE_MAP_HEIGHT + 4, 0);
+    read(fd, buf, sizeof(buf));
+    close(fd);
+
+    for (uint16_t i = 0; i < sizeof(buf); i++) {
+        uint16_t ty = 4 + i;
+        uint8_t tile_val = buf[i];
+
+        uint8_t final_tile = tile_val;
+        if (offset_val > 0 && tile_val > 0 && tile_val <= 114) {
+            uint16_t inflated = (uint16_t)tile_val + offset_val;
+            if (inflated < 116) final_tile = (uint8_t)inflated;
+        }
+
+        uint16_t map_offset = ty * MAZE_MAP_WIDTH + tx;
+        RIA.addr0 = MAZE_MAP_DATA + map_offset;
+        RIA.step0 = 1;
+        RIA.rw0 = final_tile;
+    }
+}
+
+// Loads a full level's 47x30 tiles into MAZE_MAP_DATA -- used once, for
+// level 0, when an EXTRA game starts (mirrors the row-major XRAM-to-XRAM
+// copy reset_prizes_and_mazes_level() does for NORMAL's own level 0,
+// just sourced from ROM and transposed out of R_Mazes_b/c.bin's
+// column-major layout via RIA's step feature instead).
+static void load_extra_maze_level_to_map(uint8_t level) {
+    const char *filename;
+    uint8_t file_level;
+    get_extra_maze_file(level, &filename, &file_level);
+
+    int fd = open(filename, O_RDONLY);
+    if (fd < 0) return;
+
+    long level_base = (long)file_level * (MAZE_MAP_WIDTH * MAZE_MAP_HEIGHT);
+    uint8_t buf[MAZE_MAP_HEIGHT]; // 30 rows for one column
+
+    for (uint16_t tx = 0; tx < MAZE_MAP_WIDTH; tx++) {
+        lseek(fd, level_base + (long)tx * MAZE_MAP_HEIGHT, 0);
+        read(fd, buf, sizeof(buf));
+
+        RIA.addr0 = MAZE_MAP_DATA + tx;
+        RIA.step0 = MAZE_MAP_WIDTH;
+        for (uint16_t ty = 0; ty < MAZE_MAP_HEIGHT; ty++) {
+            RIA.rw0 = buf[ty];
+        }
+    }
+    close(fd);
+}
+
+static void copy_single_column_with_offset(uint8_t level, uint16_t tx, uint8_t offset_val) {
+    if (get_game_mode() == GAME_MODE_EXTRA) {
+        copy_single_column_with_offset_extra(level, tx, offset_val);
+        return;
+    }
+    copy_single_column_with_offset_normal(level, tx, offset_val);
 }
 
 static void trigger_maze_transition(uint8_t target_level, bool is_right_side) {
@@ -409,9 +546,14 @@ void check_and_eat_prize(int16_t drawn_world_x, int16_t drawn_world_y) {
             unsigned prize_sparkle_config0 = PRIZE_SPARKLE_CONFIG + (0 * sizeof(vga_mode5_sprite_t));
             xram0_struct_set(prize_sparkle_config0, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
 
-            // Advance left level: 0..10, then loop back to 1
+            // Advance left level: NORMAL 0..10 then loop back to 1, EXTRA
+            // 0..21 (b=0..10, c=11..21) then loop back to 0.
             left_side_level++;
-            if (left_side_level > 10) left_side_level = 1;
+            if (get_game_mode() == GAME_MODE_EXTRA) {
+                if (left_side_level > 21) left_side_level = 0;
+            } else {
+                if (left_side_level > 10) left_side_level = 1;
+            }
 
             // Trigger column-by-column animated maze munchers transition
             trigger_maze_transition(left_side_level, false);
@@ -442,9 +584,14 @@ void check_and_eat_prize(int16_t drawn_world_x, int16_t drawn_world_y) {
             unsigned prize_sparkle_config1 = PRIZE_SPARKLE_CONFIG + (1 * sizeof(vga_mode5_sprite_t));
             xram0_struct_set(prize_sparkle_config1, vga_mode5_sprite_t, xram_sprite_ptr, (SPRITE_DATA + (48 * SPRITE_FRAME_SIZE)));
 
-            // Advance right level: 0..10, then loop back to 1
+            // Advance right level: NORMAL 0..10 then loop back to 1, EXTRA
+            // 0..21 (b=0..10, c=11..21) then loop back to 0.
             right_side_level++;
-            if (right_side_level > 10) right_side_level = 1;
+            if (get_game_mode() == GAME_MODE_EXTRA) {
+                if (right_side_level > 21) right_side_level = 0;
+            } else {
+                if (right_side_level > 10) right_side_level = 1;
+            }
 
             // Trigger column-by-column animated maze munchers transition
             trigger_maze_transition(right_side_level, true);

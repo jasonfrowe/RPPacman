@@ -504,6 +504,42 @@ static const uint16_t GHOST_SPEED_TABLE[22] = {
     0x0280, // Level 21 (Crown):             2.500 px/frame (Max Cap)
 };
 
+// EXTRA's own 22-level ghost speed ramp -- see EXTRA_SPEED_TABLE in
+// player.c for the matching Pac-Man-side table and the reasoning: starts
+// close to that table's own level 0 (0x01D8 here vs 0x01D7 there -- a
+// 0.004 px/frame gap, imperceptible in play) and lands exactly on
+// GHOST_SPEED_TABLE[21] (0x0280) instead of inventing a new top speed.
+// Straight line in 8.8 fixed point: 0x01D8 plus a flat +0x08 per level.
+static const uint16_t EXTRA_GHOST_SPEED_TABLE[22] = {
+    0x01D8, // Level 0:  1.844 px/frame
+    0x01E0, // Level 1:  1.875 px/frame
+    0x01E8, // Level 2:  1.906 px/frame
+    0x01F0, // Level 3:  1.938 px/frame
+    0x01F8, // Level 4:  1.969 px/frame
+    0x0200, // Level 5:  2.000 px/frame
+    0x0208, // Level 6:  2.031 px/frame
+    0x0210, // Level 7:  2.062 px/frame
+    0x0218, // Level 8:  2.094 px/frame
+    0x0220, // Level 9:  2.125 px/frame
+    0x0228, // Level 10: 2.156 px/frame
+    0x0230, // Level 11: 2.188 px/frame
+    0x0238, // Level 12: 2.219 px/frame
+    0x0240, // Level 13: 2.250 px/frame
+    0x0248, // Level 14: 2.281 px/frame
+    0x0250, // Level 15: 2.312 px/frame
+    0x0258, // Level 16: 2.344 px/frame
+    0x0260, // Level 17: 2.375 px/frame
+    0x0268, // Level 18: 2.406 px/frame
+    0x0270, // Level 19: 2.438 px/frame
+    0x0278, // Level 20: 2.469 px/frame
+    0x0280, // Level 21: 2.500 px/frame (matches GHOST_SPEED_TABLE[21] exactly)
+};
+
+// Picks GHOST_SPEED_TABLE vs EXTRA_GHOST_SPEED_TABLE by game mode.
+static uint16_t get_ghost_base_speed_fp(uint8_t speed_lvl) {
+    return (get_game_mode() == GAME_MODE_EXTRA) ? EXTRA_GHOST_SPEED_TABLE[speed_lvl] : GHOST_SPEED_TABLE[speed_lvl];
+}
+
 // Forward declarations -- defined further down, needed by the vertical-
 // tunnel wrap safety check in update_ghost_outside_movement() below.
 static bool is_ghost_safe_tile_value(uint8_t v);
@@ -514,7 +550,7 @@ static void update_ghost_outside_movement(int ghost_index) {
     ghost_struct *g = &ghosts[ghost_index];
 
     uint8_t speed_lvl = get_speed_level_index();
-    uint16_t base_speed_fp = GHOST_SPEED_TABLE[speed_lvl];
+    uint16_t base_speed_fp = get_ghost_base_speed_fp(speed_lvl);
     uint16_t speed_fp = base_speed_fp; // Normal chase mode ghosts move at their own level speed
 
     if (g->mode == GHOST_MODE_FRIGHTENED) {
@@ -1014,7 +1050,7 @@ void ghost_update_motion(void) {
                 ghost_struct *g = &ghosts[i];
                 if (g->state == GHOST_STATE_HOME_BOUNCE) {
                     uint8_t speed_lvl = get_speed_level_index();
-                    uint16_t home_speed_fp = (SPEED_TABLE[speed_lvl] * 85) / 100;
+                    uint16_t home_speed_fp = (get_player_base_speed_fp(speed_lvl) * 85) / 100;
                     uint16_t move_px = 0;
                     if (g->dir == DIR_DOWN) {
                         g->sub_py += home_speed_fp;
@@ -1097,7 +1133,7 @@ void ghost_update_motion(void) {
                 ghost_struct *g = &ghosts[i];
                 if (g->state == GHOST_STATE_HOME_BOUNCE) {
                     uint8_t speed_lvl = get_speed_level_index();
-                    uint16_t home_speed_fp = (SPEED_TABLE[speed_lvl] * 85) / 100;
+                    uint16_t home_speed_fp = (get_player_base_speed_fp(speed_lvl) * 85) / 100;
                     uint16_t move_px = 0;
                     if (g->dir == DIR_DOWN) {
                         g->sub_py += home_speed_fp;
@@ -1223,7 +1259,7 @@ void ghost_update_motion(void) {
     // --- 1. Update Ghost Positions per State ---
     // Home bounce speed: 0.85x of Pac-Man's level base speed
     uint8_t speed_lvl = get_speed_level_index();
-    uint16_t home_speed_fp = (SPEED_TABLE[speed_lvl] * 85) / 100;
+    uint16_t home_speed_fp = (get_player_base_speed_fp(speed_lvl) * 85) / 100;
 
     for (int i = 0; i < NGHOSTS; i++) {
         ghost_struct *g = &ghosts[i];
@@ -1283,7 +1319,7 @@ void ghost_update_motion(void) {
             // Eaten return Step 2: Eyes descend from (23, 12) to row 16 (23, 16) at 2.0x speed
             int16_t row16_y = 16 * MAZE_TILES_SIZE_PX; // 128px
             int16_t home_x = GHOST_HOME_X[i];
-            uint16_t enter_speed_fp = SPEED_TABLE[speed_lvl] * 2; // 2.0x speed for eaten eyes
+            uint16_t enter_speed_fp = get_player_base_speed_fp(speed_lvl) * 2; // 2.0x speed for eaten eyes
 
             g->dir = DIR_DOWN;
             g->sub_py += enter_speed_fp;
@@ -1336,7 +1372,7 @@ void ghost_update_motion(void) {
             // Ascend vertically from (23, 14) to (23, 12) => 96px at 0.25x of Pac-Man level base speed
             int16_t target_exit_y = 12 * MAZE_TILES_SIZE_PX; // 96px
             g->dir = DIR_UP;
-            uint16_t exit_speed_fp = SPEED_TABLE[speed_lvl] >> 2; // 0.25x Pac-Man level speed
+            uint16_t exit_speed_fp = get_player_base_speed_fp(speed_lvl) >> 2; // 0.25x Pac-Man level speed
 
             if (g->sub_py > (target_exit_y << 8)) {
                 if (g->sub_py >= (target_exit_y << 8) + exit_speed_fp) {
