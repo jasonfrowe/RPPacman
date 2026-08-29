@@ -15,14 +15,18 @@ typedef struct {
     char initials[3];
 } hiscore_entry_t;
 
-static hiscore_entry_t s_hiscores[HISCORE_COUNT];
+// Indexed [game_mode_t][rank] -- NORMAL and EXTRA are two entirely
+// separate top-10 tables, saved/loaded together as one file.
+static hiscore_entry_t s_hiscores[2][HISCORE_COUNT];
 
 static void hiscores_set_defaults(void) {
-    for (uint8_t i = 0; i < HISCORE_COUNT; i++) {
-        s_hiscores[i].score = 0;
-        s_hiscores[i].initials[0] = 'A';
-        s_hiscores[i].initials[1] = 'A';
-        s_hiscores[i].initials[2] = 'A';
+    for (uint8_t m = 0; m < 2; m++) {
+        for (uint8_t i = 0; i < HISCORE_COUNT; i++) {
+            s_hiscores[m][i].score = 0;
+            s_hiscores[m][i].initials[0] = 'A';
+            s_hiscores[m][i].initials[1] = 'A';
+            s_hiscores[m][i].initials[2] = 'A';
+        }
     }
 }
 
@@ -42,40 +46,41 @@ void hiscores_load(void) {
     int n = read(fd, s_hiscores, sizeof(s_hiscores));
     close(fd);
     if (n != (int)sizeof(s_hiscores)) {
-        // Missing/short/corrupt file (e.g. first-ever run) -- start clean
-        // rather than trust a partial read.
+        // Missing/short/corrupt file (e.g. first-ever run, or an older
+        // single-table save from before EXTRA mode) -- start clean rather
+        // than trust a partial read or misinterpret the old format.
         hiscores_set_defaults();
     }
 }
 
-uint32_t hiscores_get_score(uint8_t rank) {
+uint32_t hiscores_get_score(game_mode_t mode, uint8_t rank) {
     if (rank >= HISCORE_COUNT) return 0;
-    return s_hiscores[rank].score;
+    return s_hiscores[mode][rank].score;
 }
 
-const char *hiscores_get_initials(uint8_t rank) {
+const char *hiscores_get_initials(game_mode_t mode, uint8_t rank) {
     static const char fallback[3] = { 'A', 'A', 'A' };
     if (rank >= HISCORE_COUNT) return fallback;
-    return s_hiscores[rank].initials;
+    return s_hiscores[mode][rank].initials;
 }
 
-int8_t hiscores_find_rank(uint32_t score) {
+int8_t hiscores_find_rank(game_mode_t mode, uint32_t score) {
     for (uint8_t i = 0; i < HISCORE_COUNT; i++) {
-        if (score > s_hiscores[i].score) return (int8_t)i;
+        if (score > s_hiscores[mode][i].score) return (int8_t)i;
     }
     return -1;
 }
 
-void hiscores_insert(int8_t rank, uint32_t score, const char *initials) {
+void hiscores_insert(game_mode_t mode, int8_t rank, uint32_t score, const char *initials) {
     if (rank < 0 || rank >= HISCORE_COUNT) return;
 
     for (int8_t i = HISCORE_COUNT - 1; i > rank; i--) {
-        s_hiscores[i] = s_hiscores[i - 1];
+        s_hiscores[mode][i] = s_hiscores[mode][i - 1];
     }
-    s_hiscores[rank].score = score;
-    s_hiscores[rank].initials[0] = initials[0];
-    s_hiscores[rank].initials[1] = initials[1];
-    s_hiscores[rank].initials[2] = initials[2];
+    s_hiscores[mode][rank].score = score;
+    s_hiscores[mode][rank].initials[0] = initials[0];
+    s_hiscores[mode][rank].initials[1] = initials[1];
+    s_hiscores[mode][rank].initials[2] = initials[2];
 
     hiscores_save();
 }

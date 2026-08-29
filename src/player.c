@@ -256,7 +256,7 @@ void add_player_score(uint32_t pts, uint8_t category) {
     // itself is only updated later, via hiscores_insert() from the
     // congrats screen if this run's final score actually makes the
     // top 10.
-    if (player.score > hiscores_get_score(0)) {
+    if (player.score > hiscores_get_score(get_game_mode(), 0)) {
         update_hiscore_display(player.score);
     }
 
@@ -350,28 +350,40 @@ static void check_and_eat_pellet(int16_t world_x, int16_t world_y) {
 // 0x0100 = 1.000 px/frame (Cherry) -> 0x0255 = 2.332 px/frame (Crown)
 // Max cap calibrated to a measured real-hardware top speed pattern of
 // 3,2,2,3,2,2 px/frame (avg 2.333 px/frame).
+//
+// Front-loaded, not linear: reaches 85% of the level0-level21 range by
+// level 5, then eases the remaining 15% out over levels 5-21. A pure
+// linear ramp between the same two endpoints (the original shape here)
+// measured 33% slower to reach map 10 than the real game -- modeling
+// clear-time as roughly proportional to 1/speed, a linear ramp spends
+// most of maps 0-10 well below the real game's actual pace, even though
+// both endpoints were already individually correct. This front-loaded
+// shape was chosen because it reduces that same modeled time by almost
+// exactly the reported 25% (240s -> 180s for maps 0-10), matching the
+// classic arcade's own philosophy of reaching near-top speed within the
+// first handful of levels rather than climbing gradually the whole game.
 const uint16_t SPEED_TABLE[22] = {
     0x0100, // Level 0  (Cherry):            1.000 px/frame
-    0x0110, // Level 1  (Strawberry):        1.062 px/frame
-    0x0120, // Level 2  (Orange):            1.125 px/frame
-    0x0131, // Level 3  (Apple):             1.191 px/frame
-    0x0141, // Level 4  (Melon):             1.254 px/frame
-    0x0151, // Level 5  (Banana):            1.316 px/frame
-    0x0161, // Level 6  (Peach):             1.379 px/frame
-    0x0172, // Level 7  (Galaxian Boss):     1.445 px/frame
-    0x0182, // Level 8  (Bell):              1.508 px/frame
-    0x0192, // Level 9  (Key):               1.570 px/frame
-    0x01A2, // Level 10 (Coffee):            1.633 px/frame
-    0x01B3, // Level 11 (Cake):              1.699 px/frame
-    0x01C3, // Level 12 (Galaga):            1.762 px/frame
-    0x01D3, // Level 13 (Gaplus Drone):      1.824 px/frame
-    0x01E3, // Level 14 (Hamburger):         1.887 px/frame
-    0x01F4, // Level 15 (Fried Egg):         1.953 px/frame
-    0x0204, // Level 16 (Candy):             2.016 px/frame
-    0x0214, // Level 17 (Four-Leaf Clover):  2.078 px/frame
-    0x0224, // Level 18 (Diamond):           2.141 px/frame
-    0x0235, // Level 19 (Heart):             2.207 px/frame
-    0x0245, // Level 20 (Samurai Helmet):    2.270 px/frame
+    0x013A, // Level 1  (Strawberry):        1.227 px/frame
+    0x0174, // Level 2  (Orange):            1.453 px/frame
+    0x01AE, // Level 3  (Apple):             1.680 px/frame
+    0x01E8, // Level 4  (Melon):             1.906 px/frame
+    0x0222, // Level 5  (Banana):            2.133 px/frame
+    0x0225, // Level 6  (Peach):             2.145 px/frame
+    0x0228, // Level 7  (Galaxian Boss):     2.156 px/frame
+    0x022B, // Level 8  (Bell):              2.168 px/frame
+    0x022F, // Level 9  (Key):               2.184 px/frame
+    0x0232, // Level 10 (Coffee):            2.195 px/frame
+    0x0235, // Level 11 (Cake):              2.207 px/frame
+    0x0238, // Level 12 (Galaga):            2.219 px/frame
+    0x023B, // Level 13 (Gaplus Drone):      2.230 px/frame
+    0x023F, // Level 14 (Hamburger):         2.246 px/frame
+    0x0242, // Level 15 (Fried Egg):         2.258 px/frame
+    0x0245, // Level 16 (Candy):             2.270 px/frame
+    0x0248, // Level 17 (Four-Leaf Clover):  2.281 px/frame
+    0x024B, // Level 18 (Diamond):           2.293 px/frame
+    0x024F, // Level 19 (Heart):             2.309 px/frame
+    0x0252, // Level 20 (Samurai Helmet):    2.320 px/frame
     0x0255, // Level 21 (Crown):             2.332 px/frame (Max Cap)
 };
 

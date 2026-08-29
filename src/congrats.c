@@ -7,6 +7,7 @@
 #include "congrats.h"
 #include "tile_mode2.h"
 #include "sprite_mode5.h" // player global
+#include "player.h"  // game_mode_t / get_game_mode()
 #include "hiscores.h"
 #include "opl.h"
 #include "ghost.h"   // start_rankings_screen() -- defined in main.c, declared there like start_congrats_screen()
@@ -28,6 +29,21 @@ static void load_rom_asset_to_xram(const char *filename, unsigned dest, unsigned
     if (fd < 0) return;
     read_xram(dest, size, fd);
     close(fd);
+}
+
+// congratsmap places the "NORMAL" banner (tiles 115,116,117 = "NO","RM",
+// "AL") at map cells (13,14)-(15,14) -- confirmed by decoding
+// Congrats_map.bin directly. In EXTRA mode, repoint those same 3 cells at
+// congratstiles' own "EXTRA" banner (126,127,128 = "EX","TR","A ") added
+// alongside it.
+static void patch_congrats_mode_label(bool is_extra) {
+    if (!is_extra) return;
+    static const uint8_t EXTRA_TILES[3] = { 126, 127, 128 };
+    for (uint8_t i = 0; i < 3; i++) {
+        RIA.addr0 = TITLE_MAP_DATA + (14 * TITLE_MAP_WIDTH) + 13 + i;
+        RIA.step0 = 1;
+        RIA.rw0 = EXTRA_TILES[i];
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -136,6 +152,7 @@ void congrats_update(bool press_up, bool press_down, bool press_action) {
         case CONGRATS_SWAP_ASSETS: {
             load_rom_asset_to_xram("ROM:congratsmap", TITLE_MAP_DATA, TITLE_MAP_DATA_SIZE);
             load_rom_asset_to_xram("ROM:congratstiles", TITLE_TILES_DATA, TITLE_TILES_DATA_SIZE);
+            patch_congrats_mode_label(get_game_mode() == GAME_MODE_EXTRA);
             // Results' own score-totals digits (rows 3-4) are still
             // sitting on the TEXT_MAP layer at this point -- clear them
             // so they don't bleed through on top of this screen.
@@ -186,7 +203,7 @@ void congrats_update(bool press_up, bool press_down, bool press_action) {
                     s_initials[s_cursor] = 'A'; // reveal the next slot
                     changed = true;
                 } else {
-                    hiscores_insert(s_rank, player.score, s_initials);
+                    hiscores_insert(get_game_mode(), s_rank, player.score, s_initials);
                     s_substate = CONGRATS_FADE_OUT_TO_RANKINGS;
                     s_timer = 0;
                     break;
@@ -225,11 +242,41 @@ typedef enum {
 static rankings_substate_t s_rank_substate;
 static uint16_t s_rank_timer;
 static bool s_rank_return_to_options;
+static game_mode_t s_rank_view_mode;
+static bool s_rank_allow_toggle;
+
+// rankingsmap places the "NORMAL"/"EXTRA" banner across two rows: row 5
+// (60,61,62,63,64,65 = N,O,R,M,A,L) and row 6 (66,67,68,69,68,70 = the
+// same letters' bottom halves), both at columns 17-22 -- confirmed by
+// decoding Rankings_map.bin directly. rankingstiles' own added "EXTRA"
+// glyphs (106,107,110,112,114,116 / 108,109,111,113,115,117) sit
+// alongside the NORMAL ones in the same loaded tileset, so switching
+// which board is showing is just repointing these 12 map cells, no asset
+// reload needed.
+static void patch_rankings_mode_label(bool is_extra) {
+    static const uint8_t NORMAL_ROW0[6] = { 60, 61, 62, 63, 64, 65 };
+    static const uint8_t NORMAL_ROW1[6] = { 66, 67, 68, 69, 68, 70 };
+    static const uint8_t EXTRA_ROW0[6]  = { 106, 107, 110, 112, 114, 116 };
+    static const uint8_t EXTRA_ROW1[6]  = { 108, 109, 111, 113, 115, 117 };
+    const uint8_t *row0 = is_extra ? EXTRA_ROW0 : NORMAL_ROW0;
+    const uint8_t *row1 = is_extra ? EXTRA_ROW1 : NORMAL_ROW1;
+
+    for (uint8_t i = 0; i < 6; i++) {
+        RIA.addr0 = TITLE_MAP_DATA + (5 * TITLE_MAP_WIDTH) + 17 + i;
+        RIA.step0 = 1;
+        RIA.rw0 = row0[i];
+    }
+    for (uint8_t i = 0; i < 6; i++) {
+        RIA.addr0 = TITLE_MAP_DATA + (6 * TITLE_MAP_WIDTH) + 17 + i;
+        RIA.step0 = 1;
+        RIA.rw0 = row1[i];
+    }
+}
 
 static void draw_rankings_list(void) {
     for (uint8_t i = 0; i < HISCORE_COUNT; i++) {
-        uint32_t score = hiscores_get_score(i);
-        const char *initials = hiscores_get_initials(i);
+        uint32_t score = hiscores_get_score(s_rank_view_mode, i);
+        const char *initials = hiscores_get_initials(s_rank_view_mode, i);
 
         char sbuf[8];
         uint32_t val = score;
@@ -246,10 +293,17 @@ static void draw_rankings_list(void) {
     }
 }
 
+// return_to_options screens (reached from the Options menu) always start
+// on NORMAL and let the confirm button cycle NORMAL -> EXTRA -> back to
+// Options. Reached from Congrats (just qualified in whichever mode was
+// actually played), there's no toggle -- it shows only that mode's board,
+// and a single press returns to the title, exactly as before.
 void rankings_init(bool return_to_options) {
     s_rank_substate = RANKINGS_SWAP_ASSETS;
     s_rank_timer = 0;
     s_rank_return_to_options = return_to_options;
+    s_rank_allow_toggle = return_to_options;
+    s_rank_view_mode = return_to_options ? GAME_MODE_NORMAL : get_game_mode();
 }
 
 void rankings_update(bool press_confirm) {
@@ -258,6 +312,7 @@ void rankings_update(bool press_confirm) {
         case RANKINGS_SWAP_ASSETS: {
             load_rom_asset_to_xram("ROM:rankingsmap", TITLE_MAP_DATA, TITLE_MAP_DATA_SIZE);
             load_rom_asset_to_xram("ROM:rankingstiles", TITLE_TILES_DATA, TITLE_TILES_DATA_SIZE);
+            patch_rankings_mode_label(s_rank_view_mode == GAME_MODE_EXTRA);
             // Congrats' own rank/score banner and initials (rows 6, 10)
             // are still sitting on the TEXT_MAP layer, overlapping the
             // rows this screen's list uses (4-13) -- clear them first.
@@ -289,7 +344,12 @@ void rankings_update(bool press_confirm) {
 
         case RANKINGS_WAIT_FOR_CONFIRM: {
             if (press_confirm) {
-                if (s_rank_return_to_options) {
+                if (s_rank_allow_toggle && s_rank_view_mode == GAME_MODE_NORMAL) {
+                    // First press: swap the board to EXTRA and stay here.
+                    s_rank_view_mode = GAME_MODE_EXTRA;
+                    patch_rankings_mode_label(true);
+                    draw_rankings_list();
+                } else if (s_rank_return_to_options) {
                     start_options_screen();
                 } else {
                     return_to_title_from_post_game();

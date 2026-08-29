@@ -78,7 +78,7 @@ void init_tilemap_edges(void) {
     // tiles) -- overwrite with the real persisted top score so it's
     // correct immediately, both at boot and whenever this is called again
     // returning to the title screen.
-    update_hiscore_display(hiscores_get_score(0));
+    update_hiscore_display(hiscores_get_score(GAME_MODE_NORMAL, 0));
 }
 
 void tile_mode2_text_map_init(void) {

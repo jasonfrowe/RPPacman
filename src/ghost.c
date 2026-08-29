@@ -475,64 +475,65 @@ static void compute_ghost_target_tile(int ghost_index, int16_t *target_tx, int16
 }
 
 // 8.8 Fixed-Point Ghost Chase-Speed Table across 22 Prize Levels (Cherry to Crown).
-// Independent of Pac-Man's own SPEED_TABLE -- ghosts catch up to, and at high
-// levels exceed, Pac-Man's top speed, matching real Pac-Man CE behavior.
-// Max cap calibrated to a measured real-hardware top speed pattern of
-// 3,2,3,2,3 px/frame (avg 2.500 px/frame).
+// Always exactly 95% of Pac-Man's own SPEED_TABLE (player.c) at the same
+// level -- ghosts ramp up in lockstep with Pac-Man's own front-loaded
+// curve but never catch up to, let alone exceed, his speed. The previous
+// table let ghosts overtake Pac-Man at high levels (matching real
+// Pac-Man CE hardware), which made the late game feel unfairly hard;
+// capping ghosts at a constant fraction of Pac-Man's speed removes that
+// entirely by construction, at every level, not just at the endpoints.
 static const uint16_t GHOST_SPEED_TABLE[22] = {
-    0x00E0, // Level 0  (Cherry):            0.875 px/frame
-    0x00F4, // Level 1  (Strawberry):        0.953 px/frame
-    0x0108, // Level 2  (Orange):            1.031 px/frame
-    0x011B, // Level 3  (Apple):             1.105 px/frame
-    0x012F, // Level 4  (Melon):             1.184 px/frame
-    0x0143, // Level 5  (Banana):            1.262 px/frame
-    0x0157, // Level 6  (Peach):             1.340 px/frame
-    0x016B, // Level 7  (Galaxian Boss):     1.418 px/frame
-    0x017E, // Level 8  (Bell):              1.492 px/frame
-    0x0192, // Level 9  (Key):               1.570 px/frame
-    0x01A6, // Level 10 (Coffee):            1.648 px/frame
-    0x01BA, // Level 11 (Cake):              1.727 px/frame
-    0x01CE, // Level 12 (Galaga):            1.805 px/frame
-    0x01E2, // Level 13 (Gaplus Drone):      1.883 px/frame
-    0x01F5, // Level 14 (Hamburger):         1.957 px/frame
-    0x0209, // Level 15 (Fried Egg):         2.035 px/frame
-    0x021D, // Level 16 (Candy):             2.113 px/frame
-    0x0231, // Level 17 (Four-Leaf Clover):  2.191 px/frame
-    0x0245, // Level 18 (Diamond):           2.270 px/frame
-    0x0258, // Level 19 (Heart):             2.344 px/frame
-    0x026C, // Level 20 (Samurai Helmet):    2.422 px/frame
-    0x0280, // Level 21 (Crown):             2.500 px/frame (Max Cap)
+    0x00F3, // Level 0  (Cherry):            0.949 px/frame
+    0x012A, // Level 1  (Strawberry):        1.164 px/frame
+    0x0161, // Level 2  (Orange):            1.379 px/frame
+    0x0198, // Level 3  (Apple):             1.594 px/frame
+    0x01D0, // Level 4  (Melon):             1.812 px/frame
+    0x0207, // Level 5  (Banana):            2.027 px/frame
+    0x020A, // Level 6  (Peach):             2.039 px/frame
+    0x020C, // Level 7  (Galaxian Boss):     2.047 px/frame
+    0x020F, // Level 8  (Bell):              2.059 px/frame
+    0x0213, // Level 9  (Key):               2.074 px/frame
+    0x0216, // Level 10 (Coffee):            2.086 px/frame
+    0x0219, // Level 11 (Cake):              2.098 px/frame
+    0x021C, // Level 12 (Galaga):            2.109 px/frame
+    0x021E, // Level 13 (Gaplus Drone):      2.117 px/frame
+    0x0222, // Level 14 (Hamburger):         2.133 px/frame
+    0x0225, // Level 15 (Fried Egg):         2.145 px/frame
+    0x0228, // Level 16 (Candy):             2.156 px/frame
+    0x022B, // Level 17 (Four-Leaf Clover):  2.168 px/frame
+    0x022E, // Level 18 (Diamond):           2.180 px/frame
+    0x0231, // Level 19 (Heart):             2.191 px/frame
+    0x0234, // Level 20 (Samurai Helmet):    2.203 px/frame
+    0x0237, // Level 21 (Crown):             2.215 px/frame (95% of SPEED_TABLE[21])
 };
 
-// EXTRA's own 22-level ghost speed ramp -- see EXTRA_SPEED_TABLE in
-// player.c for the matching Pac-Man-side table and the reasoning: starts
-// close to that table's own level 0 (0x01D8 here vs 0x01D7 there -- a
-// 0.004 px/frame gap, imperceptible in play) and lands exactly on
-// GHOST_SPEED_TABLE[21] (0x0280) instead of inventing a new top speed.
-// Straight line in 8.8 fixed point: 0x01D8 plus a flat +0x08 per level.
+// EXTRA's own 22-level ghost speed ramp -- same rule as NORMAL's table
+// above, always exactly 95% of EXTRA_SPEED_TABLE (player.c) at the same
+// level, so EXTRA's ghosts never catch up to EXTRA's own Pac-Man speed
+// either.
 static const uint16_t EXTRA_GHOST_SPEED_TABLE[22] = {
-    0x01D8, // Level 0:  1.844 px/frame
-    0x01E0, // Level 1:  1.875 px/frame
-    0x01E8, // Level 2:  1.906 px/frame
-    0x01F0, // Level 3:  1.938 px/frame
-    0x01F8, // Level 4:  1.969 px/frame
-    0x0200, // Level 5:  2.000 px/frame
-    0x0208, // Level 6:  2.031 px/frame
-    0x0210, // Level 7:  2.062 px/frame
-    0x0218, // Level 8:  2.094 px/frame
-    0x0220, // Level 9:  2.125 px/frame
-    0x0228, // Level 10: 2.156 px/frame
-    0x0230, // Level 11: 2.188 px/frame
-    0x0238, // Level 12: 2.219 px/frame
-    0x0240, // Level 13: 2.250 px/frame
-    0x0248, // Level 14: 2.281 px/frame
-    0x0250, // Level 15: 2.312 px/frame
-    0x0258, // Level 16: 2.344 px/frame
-    0x0260, // Level 17: 2.375 px/frame
-    0x0268, // Level 18: 2.406 px/frame
-    0x0270, // Level 19: 2.438 px/frame
-    0x0278, // Level 20: 2.469 px/frame
-    0x0280, // Level 21: 2.500 px/frame (matches GHOST_SPEED_TABLE[21] exactly)
+    0x01BF, // Level 0:  1.746 px/frame
+    0x01C5, // Level 1:  1.770 px/frame
+    0x01CB, // Level 2:  1.793 px/frame
+    0x01D1, // Level 3:  1.816 px/frame
+    0x01D6, // Level 4:  1.836 px/frame
+    0x01DC, // Level 5:  1.859 px/frame
+    0x01E2, // Level 6:  1.883 px/frame
+    0x01E7, // Level 7:  1.902 px/frame
+    0x01ED, // Level 8:  1.926 px/frame
+    0x01F3, // Level 9:  1.949 px/frame
+    0x01F8, // Level 10: 1.969 px/frame
+    0x01FE, // Level 11: 1.992 px/frame
+    0x0204, // Level 12: 2.016 px/frame
+    0x020A, // Level 13: 2.039 px/frame
+    0x020F, // Level 14: 2.059 px/frame
+    0x0215, // Level 15: 2.082 px/frame
+    0x021B, // Level 16: 2.105 px/frame
+    0x0220, // Level 17: 2.125 px/frame
+    0x0226, // Level 18: 2.148 px/frame
+    0x022C, // Level 19: 2.172 px/frame
+    0x0231, // Level 20: 2.191 px/frame
+    0x0237, // Level 21: 2.215 px/frame (matches GHOST_SPEED_TABLE[21] exactly)
 };
 
 // Picks GHOST_SPEED_TABLE vs EXTRA_GHOST_SPEED_TABLE by game mode.

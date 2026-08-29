@@ -2,6 +2,7 @@
 #define PLAYER_H
 
 #include <stdint.h>
+#include <stdbool.h>
 #include "input.h"
 
 // Movement Directions

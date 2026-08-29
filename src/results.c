@@ -99,6 +99,20 @@ static void load_rom_asset_to_xram(const char *filename, unsigned dest, unsigned
     close(fd);
 }
 
+// resultsmap places the "NORMAL" banner (tiles 67,68,69 = "NO","RM","AL")
+// at map cells (8,3)-(10,3) -- confirmed by decoding Results_map.bin
+// directly. In EXTRA mode, repoint those same 3 cells at resultstiles'
+// own "EXTRA" banner (153,154,155 = "EX","TR","A ") added alongside it.
+static void patch_results_mode_label(bool is_extra) {
+    if (!is_extra) return;
+    static const uint8_t EXTRA_TILES[3] = { 153, 154, 155 };
+    for (uint8_t i = 0; i < 3; i++) {
+        RIA.addr0 = TITLE_MAP_DATA + (3 * TITLE_MAP_WIDTH) + 8 + i;
+        RIA.step0 = 1;
+        RIA.rw0 = EXTRA_TILES[i];
+    }
+}
+
 // Blanks all of TEXT_MAP_DATA except the 7 score-digit tiles at row 0,
 // cols 9-15, so nothing but the live score survives onto the results
 // screen's font layer.
@@ -278,6 +292,7 @@ void results_update(bool press_start, bool press_action) {
         case RESULTS_SWAP_ASSETS: {
             load_rom_asset_to_xram("ROM:resultsmap", TITLE_MAP_DATA, TITLE_MAP_DATA_SIZE);
             load_rom_asset_to_xram("ROM:resultstiles", TITLE_TILES_DATA, TITLE_TILES_DATA_SIZE);
+            patch_results_mode_label(get_game_mode() == GAME_MODE_EXTRA);
             s_substate = RESULTS_FADE_IN_RESULTS;
             s_timer = 0;
             break;
@@ -352,7 +367,7 @@ void results_update(bool press_start, bool press_action) {
                 // A qualifying score hands off to the congrats screen
                 // (initials entry, then the rankings table) instead of
                 // going straight back to the title.
-                int8_t rank = hiscores_find_rank(player.score);
+                int8_t rank = hiscores_find_rank(get_game_mode(), player.score);
                 if (rank >= 0) {
                     start_congrats_screen(rank);
                 } else {
