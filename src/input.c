@@ -111,13 +111,57 @@ static bool gamepad_connected(void)
     return (s_gamepad0.dpad & GP_CONNECTED) != 0u;
 }
 
+// Below this magnitude on both axes, the left stick reads as centered.
+// Roughly matches the firmware's own per-axis digitizing threshold
+// (confirmed empirically: +-30 on one axis alone doesn't register, +-60
+// does), just applied to the raw analog value instead of the firmware's
+// already-digitized (and, on a diagonal push, already-ambiguous) bits.
+#define STICK_DEADZONE 40
+
+// The firmware's own digitized `sticks` byte (GP_LSTICK_*) sets BOTH the
+// vertical and horizontal bit together for any push that isn't within
+// about 40 units of a pure cardinal angle -- confirmed empirically (even
+// a shallow (-60,-100) tilt, nowhere near 45 degrees, reports UP|LEFT).
+// player_update_motion() (player.c) has no way to tell which axis a
+// player pushed harder from two boolean bits, so it fell back to a fixed
+// priority order (e.g. UP beats LEFT) -- meaning any stick push that
+// isn't a near-perfect cardinal angle got silently redirected to
+// whichever direction the priority order favors, not the one the player
+// actually leaned toward. That's indistinguishable from "the controls
+// don't listen" to a player whose stick control is less precise, which
+// is the accessibility complaint this fixes.
+//
+// Resolving to the single dominant axis here -- from the raw analog
+// value, which is finer-grained than the firmware's own digitization --
+// means a diagonal-ish push now reports exactly one direction (whichever
+// axis was pushed harder) before it ever reaches the shared D-Pad/stick
+// movement logic in player.c, which is otherwise completely unchanged:
+// the D-Pad's own behavior, and its priority rules for a genuine
+// simultaneous two-button press, are untouched.
+static uint8_t stick_dpad_mask(void)
+{
+    int16_t ax = s_gamepad0.lx;
+    int16_t ay = s_gamepad0.ly;
+    int16_t absx = (ax < 0) ? -ax : ax;
+    int16_t absy = (ay < 0) ? -ay : ay;
+
+    if (absx < STICK_DEADZONE && absy < STICK_DEADZONE) {
+        return 0u;
+    }
+
+    if (absx > absy) {
+        return (ax < 0) ? GP_LSTICK_LEFT : GP_LSTICK_RIGHT;
+    }
+    return (ay < 0) ? GP_LSTICK_UP : GP_LSTICK_DOWN;
+}
+
 static uint8_t gamepad_field_value(uint8_t field)
 {
     switch (field) {
         case GP_FIELD_DPAD:
             return s_gamepad0.dpad;
         case GP_FIELD_STICKS:
-            return s_gamepad0.sticks;
+            return stick_dpad_mask();
         case GP_FIELD_BTN0:
             return s_gamepad0.btn0;
         case GP_FIELD_BTN1:
